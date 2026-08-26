@@ -37,7 +37,6 @@ export const MetaEditor: React.FC = () => {
     'Leagues of Votann'
   ];
 
-  // 🛡️ SÉCURITÉ : Récupération sécurisée du tableau 2D factionVsFaction
   const rawMatrix = store.matrices?.factionVsFaction || {};
   const [matrixData, setMatrixData] = useState<Record<string, Record<string, number>>>(rawMatrix);
 
@@ -52,7 +51,6 @@ export const MetaEditor: React.FC = () => {
     localStorage.setItem('gemini_api_key', key);
   };
 
-  // Modification manuelle d'une cellule du tableau croisé (Score WTC 0 à 20)
   const handleScoreChange = (attacker: string, defender: string, val: string) => {
     const num = parseInt(val, 10);
     const score = isNaN(num) ? 10 : Math.min(20, Math.max(0, num));
@@ -66,7 +64,6 @@ export const MetaEditor: React.FC = () => {
     }));
   };
 
-  // Appel à Gemini pour générer le tableau croisé Faction vs Faction
   const fetchMetaFromGemini = async () => {
     if (!apiKey.trim()) {
       alert('Veuillez renseigner votre clé API Gemini.');
@@ -74,26 +71,23 @@ export const MetaEditor: React.FC = () => {
     }
 
     setLoading(true);
-    setStatusMessage('Analyse et compilation de la matrice Faction vs Faction (W40K V11)...');
+    setStatusMessage('Interrogation de Gemini pour la méta W40K V11...');
 
     const prompt = `
-Tu es un expert W40K V11 et tournois WTC.
-Analyse les winrates récents et le méta actuel pour compiler une MATRICE DE MATCHUPS Faction contre Faction (Attaquant vs Défenseur).
-Évalue chaque affrontement sur l'échelle officielle WTC de 0 à 20 (où 10 = Équilibré, 0 = Défaite écrasante -3, 20 = Victoire écrasante +3).
-
-Retourne EXCLUSIVEMENT un JSON valide respectant cette structure exacte sans markdown ni texte autour :
+En tant qu'expert des tournois Warhammer 40k V11 et du format WTC, génère une matrice de matchup Faction contre Faction.
+Les scores doivent aller de 0 à 20 (10 = équilibré).
+Tu DOIS retourner UNIQUEMENT un objet JSON brut, sans aucun texte avant ou après, sans balises markdown (pas de \`\`\`json).
+Structure exacte attendue :
 {
   "factionVsFaction": {
     "Space Marines": {
       "Space Marines": 10,
-      "Aeldari": 8,
-      "Necrons": 12
+      "Aeldari": 9,
+      "Orks": 11
     }
   }
 }
-
-Voici la liste exacte des factions à inclure en lignes et en colonnes :
-${JSON.stringify(factionsList)}
+Inclus les factions suivantes en lignes et colonnes : ${JSON.stringify(factionsList)}
     `.trim();
 
     try {
@@ -103,48 +97,65 @@ ${JSON.stringify(factionsList)}
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 8192
+            }
           })
         }
       );
 
       const data = await response.json();
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('Format de réponse invalide reçu de Gemini.');
+
+      // 🛡️ NETTOYAGE ROBUSTE DU JSON (Supprime les balises markdown ```json et ``` si présentes)
+      let cleanText = rawText.trim();
+      cleanText = cleanText.replace(/^```json\s*/i, '');
+      cleanText = cleanText.replace(/^```\s*/i, '');
+      cleanText = cleanText.replace(/\s*```$/i, '');
+
+      // Extraction du premier '{' au dernier '}'
+      const firstBrace = cleanText.indexOf('{');
+      const lastBrace = cleanText.lastIndexOf('}');
+
+      if (firstBrace === -1 || lastBrace === -1) {
+        throw new Error('Aucun objet JSON valide détecté dans la réponse.');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      const newFactionVsFaction: Record<string, Record<string, number>> = parsed.factionVsFaction || {};
+      const jsonString = cleanText.substring(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(jsonString);
+      const newFactionVsFaction = parsed.factionVsFaction || {};
 
-      // Nettoyage et validation des données (0 à 20)
+      // Construction sécurisée de la matrice finale
       const cleanedMatrix: Record<string, Record<string, number>> = {};
       factionsList.forEach((att) => {
         cleanedMatrix[att] = {};
         factionsList.forEach((def) => {
           const val = newFactionVsFaction[att]?.[def];
-          cleanedMatrix[att][def] = val !== undefined ? Math.min(20, Math.max(0, val)) : 10;
+          if (att === def) {
+            cleanedMatrix[att][def] = 10;
+          } else {
+            cleanedMatrix[att][def] = typeof val === 'number' ? Math.min(20, Math.max(0, val)) : (matrixData[att]?.[def] ?? 10);
+          }
         });
       });
 
       setMatrixData(cleanedMatrix);
-      
-      // Enregistrement direct sous "factionVsFaction" dans le Store
+
       const updatedMatrices = {
         ...(store.matrices || {}),
         factionVsFaction: cleanedMatrix
       };
-      
+
       if (store.saveMatrix) {
         store.saveMatrix(updatedMatrices);
       }
 
-      setStatusMessage('Matrice Meta Faction vs Faction compilée et enregistrée !');
+      setStatusMessage('Matrice Meta mise à jour avec succès !');
     } catch (err: any) {
-      console.error(err);
-      setStatusMessage(`Erreur lors de la compilation : ${err.message || 'Problème API'}`);
+      console.error('Erreur Gemini:', err);
+      setStatusMessage(`Erreur de compilation : ${err.message || 'Réponse invalide'}`);
     } finally {
       setLoading(false);
     }
@@ -158,21 +169,20 @@ ${JSON.stringify(factionsList)}
     if (store.saveMatrix) {
       store.saveMatrix(updatedMatrices);
     }
-    alert('Matrice Meta sauvegardée avec succès !');
+    alert('Matrice Meta sauvegardée !');
   };
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6 pb-24">
-      {/* Configuration API & Commandes */}
       <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-lg space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-400" />
+              <Sparkles className="w-5 h-5 text-amber-400"/>
               Compilation Meta V11 — Faction vs Faction
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Générez ou éditez la matrice d'affrontement (-3/+3 converti en scores WTC 0 à 20).
+              Générez automatiquement via Gemini ou ajustez manuellement les scores WTC (0 à 20).
             </p>
           </div>
 
@@ -182,22 +192,21 @@ ${JSON.stringify(factionsList)}
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow transition"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw ${loading ''}`} 'animate-spin' : ? className="{`w-4" h-4/>
               Compiler via Gemini AI
             </button>
             <button
               onClick={handleManualSave}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow transition"
             >
-              <Save className="w-4 h-4" />
+              <Save className="w-4 h-4"/>
               Sauvegarder
             </button>
           </div>
         </div>
 
-        {/* Clé API Gemini */}
         <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-          <Key className="w-4 h-4 text-amber-400 shrink-0" />
+          <Key className="w-4 h-4 text-amber-400 shrink-0"/>
           <input
             type="password"
             placeholder="Clé API Gemini..."
@@ -209,12 +218,11 @@ ${JSON.stringify(factionsList)}
 
         {statusMessage && (
           <p className="text-xs text-sky-400 flex items-center gap-1 font-mono">
-            <Info className="w-3.5 h-3.5" /> {statusMessage}
+            <Info className="w-3.5 h-3.5"/> {statusMessage}
           </p>
         )}
       </div>
 
-      {/* Grille Matrice Croisée (Tableau Faction vs Faction) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-lg overflow-x-auto">
         <table className="w-full text-xs text-left border-collapse">
           <thead className="bg-slate-950 text-slate-300 uppercase sticky top-0 z-10">
@@ -241,7 +249,6 @@ ${JSON.stringify(factionsList)}
                   const score = matrixData[attFaction]?.[defFaction] ?? 10;
                   const isSelf = attFaction === defFaction;
 
-                  // Coloration visuelle dynamique selon le score WTC (0-20)
                   let cellBg = '';
                   if (!isSelf) {
                     if (score >= 13) cellBg = 'bg-emerald-950/40 text-emerald-300';
