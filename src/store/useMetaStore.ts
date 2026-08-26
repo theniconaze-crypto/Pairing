@@ -118,7 +118,7 @@ export const useMetaStore = create<MetaStore>()(
           const scores = Object.values(matrices[faction] || {}) as number[];
           const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
           return { faction, avg };
-        }).sort((a, b) => b.avg - a.avg); // Tri descendant
+        }).sort((a, b) => b.avg - a.avg); // Tri descendant corrigé ici !
 
         const topFaction = scoredFactions[0]?.faction || "Space Marines";
 
