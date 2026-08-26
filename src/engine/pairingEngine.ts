@@ -1,8 +1,5 @@
 import { Player, MatchupMatrices, StrategyOption } from '../types';
 
-/**
- * Convertit un score brut (-3 a +3) en points WTC (0 a 20)
- */
 export function ratingToWTC(score: number): number {
   const clamped = Math.max(-3, Math.min(3, score));
   if (clamped >= 0) {
@@ -16,9 +13,6 @@ export function ratingToWTC(score: number): number {
   }
 }
 
-/**
- * Calcul du Score Brut combiné : (Faction * 0.6) + (Disposition * 0.4) + Malus/Bonus Table
- */
 export function calculateMatchupScore(
   myPlayer: Player,
   oppPlayer: Player,
@@ -35,9 +29,6 @@ export function calculateMatchupScore(
   return { scoreBrut, scoreWTC };
 }
 
-/**
- * Algorithme Hongrois (Kuhn-Munkres) - O(N^3)
- */
 export function solveHungarian(costMatrix: number[][]): number[] {
   const n = costMatrix.length;
   if (n === 0) return [];
@@ -112,7 +103,63 @@ export function solveHungarian(costMatrix: number[][]): number[] {
 }
 
 /**
- * Solveur Minimax pour recommander la meilleure action de Draft WTC
+ * Minimax : Calcule le MEILLEUR DÉFENSEUR à poser pour maximiser le score minimum garanti
+ */
+export function getDefenderRecommendation(
+  myAvailable: Player[],
+  oppAvailable: Player[],
+  maps: string[],
+  matrices: MatchupMatrices,
+  strategy: StrategyOption
+): Array<{ player: Player; expectedMinScore: number; bestScenarios: string }> {
+  const evaluations = myAvailable.map((defCandidate) => {
+    let worstAttackerPairScore = Infinity;
+    let bestScenarioDesc = '';
+
+    // L'adversaire choisira les 2 attaquants qui minimisent notre rendement
+    for (let i = 0; i < oppAvailable.length; i++) {
+      for (let j = i + 1; j < oppAvailable.length; j++) {
+        const att1 = oppAvailable[i];
+        const att2 = oppAvailable[j];
+
+        // Face a ce duo, nous choisirons le meilleur attaquant et la meilleure map
+        let bestMyChoice = -Infinity;
+        let bestChoiceDetails = '';
+
+        [att1, att2].forEach((att) => {
+          maps.forEach((m) => {
+            const { scoreWTC } = calculateMatchupScore(defCandidate, att, m, matrices);
+            const val = strategy === 'MAX_SCORE' ? scoreWTC : scoreWTC - Math.abs(10 - scoreWTC) * 0.4;
+            if (val > bestMyChoice) {
+              bestMyChoice = val;
+              bestChoiceDetails = `vs ${att.name} sur ${m} (${scoreWTC} pts)`;
+            }
+          });
+        });
+
+        if (bestMyChoice < worstAttackerPairScore) {
+          worstAttackerPairScore = bestMyChoice;
+          bestScenarioDesc = bestChoiceDetails;
+        }
+      }
+    }
+
+    if (oppAvailable.length <= 1) {
+      worstAttackerPairScore = 10;
+    }
+
+    return {
+      player: defCandidate,
+      expectedMinScore: worstAttackerPairScore === Infinity ? 10 : worstAttackerPairScore,
+      bestScenarios: bestScenarioDesc
+    };
+  });
+
+  return evaluations.sort((a, b) => b.expectedMinScore - a.expectedMinScore);
+}
+
+/**
+ * Minimax : Recommande le choix de l'Attaquant et de la Map face à notre Défenseur
  */
 export function getMinimaxRecommendation(
   myPlayers: Player[],
