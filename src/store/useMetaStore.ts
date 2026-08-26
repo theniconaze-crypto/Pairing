@@ -29,68 +29,72 @@ interface MetaStore {
   generateMetaOptimizedTeam: () => void;
 }
 
+const defaultState = {
+  myTeam: { id: 'my-team', name: 'Mon Équipe', size: 0, players: [] },
+  opponentTeam: { id: 'opp-team', name: 'Équipe Adverse', size: 0, players: [] },
+  tournamentOpponents: [],
+  matrices: { factionVsFaction: {} },
+  rounds: [],
+  activeRoundId: null,
+};
+
 export const useMetaStore = create<MetaStore>()(
   persist(
     (set, get) => ({
-      myTeam: { id: 'my-team', name: 'Mon Équipe', size: 0, players: [] },
-      opponentTeam: { id: 'opp-team', name: 'Équipe Adverse', size: 0, players: [] },
-      tournamentOpponents: [],
-      matrices: { factionVsFaction: {} },
-      rounds: [],
-      activeRoundId: null,
+      ...defaultState,
 
       setMyTeam: (team) => set({ myTeam: team }),
       setOpponentTeam: (team) => set({ opponentTeam: team }),
 
       addMyPlayer: (player) => set((state) => {
-        const players = [...(state.myTeam.players || []), player];
+        const players = [...(state.myTeam?.players || []), player];
         return { myTeam: { ...state.myTeam, players, size: players.length } };
       }),
 
       deleteMyPlayer: (id) => set((state) => {
-        const players = (state.myTeam.players || []).filter(p => p.id !== id);
+        const players = (state.myTeam?.players || []).filter(p => p.id !== id);
         return { myTeam: { ...state.myTeam, players, size: players.length } };
       }),
 
       addOpponentPlayer: (player) => set((state) => {
-        const players = [...(state.opponentTeam.players || []), player];
+        const players = [...(state.opponentTeam?.players || []), player];
         return { opponentTeam: { ...state.opponentTeam, players, size: players.length } };
       }),
 
       deleteOpponentPlayer: (id) => set((state) => {
-        const players = (state.opponentTeam.players || []).filter(p => p.id !== id);
+        const players = (state.opponentTeam?.players || []).filter(p => p.id !== id);
         return { opponentTeam: { ...state.opponentTeam, players, size: players.length } };
       }),
 
-      saveMatrix: (matrix) => set({ matrices: matrix }),
+      saveMatrix: (matrix) => set({ matrices: matrix || { factionVsFaction: {} } }),
 
       startNewRound: () => set((state) => {
         const newRoundId = crypto.randomUUID();
         const newRound: Round = {
           id: newRoundId,
-          name: `Ronde ${state.rounds.length + 1}`,
+          name: `Ronde ${(state.rounds || []).length + 1}`,
           isCompleted: false,
           pairings: []
         };
-        return { rounds: [...state.rounds, newRound], activeRoundId: newRoundId };
+        return { rounds: [...(state.rounds || []), newRound], activeRoundId: newRoundId };
       }),
 
       completeRound: (roundId) => set((state) => ({
-        rounds: state.rounds.map(r => r.id === roundId ? { ...r, isCompleted: true } : r),
+        rounds: (state.rounds || []).map(r => r.id === roundId ? { ...r, isCompleted: true } : r),
         activeRoundId: state.activeRoundId === roundId ? null : state.activeRoundId
       })),
 
       deleteRound: (roundId) => set((state) => ({
-        rounds: state.rounds.filter(r => r.id !== roundId),
+        rounds: (state.rounds || []).filter(r => r.id !== roundId),
         activeRoundId: state.activeRoundId === roundId ? null : state.activeRoundId
       })),
 
       assignOpponentToRound: (roundId, oppTeamId) => set((state) => ({
-        rounds: state.rounds.map(r => r.id === roundId ? { ...r, assignedOpponentTeamId: oppTeamId } : r)
+        rounds: (state.rounds || []).map(r => r.id === roundId ? { ...r, assignedOpponentTeamId: oppTeamId } : r)
       })),
 
       saveRoundPairings: (roundId, pairings) => set((state) => ({
-        rounds: state.rounds.map(r => r.id === roundId ? { ...r, pairings } : r)
+        rounds: (state.rounds || []).map(r => r.id === roundId ? { ...r, pairings } : r)
       })),
 
       generateRandomOpponentTeam: () => {
@@ -112,13 +116,13 @@ export const useMetaStore = create<MetaStore>()(
         const matrices = get().matrices?.factionVsFaction || {};
         const allFactions = Object.keys(matrices);
         
-        if (allFactions.length === 0) return; // Si la matrice est vide, on arrête
+        if (allFactions.length === 0) return;
 
         const scoredFactions = allFactions.map(faction => {
           const scores = Object.values(matrices[faction] || {}) as number[];
           const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
           return { faction, avg };
-        }).sort((a, b) => b.avg - a.avg); // Tri descendant corrigé ici !
+        }).sort((a, b) => b.avg - a.avg);
 
         const topFaction = scoredFactions[0]?.faction || "Space Marines";
 
@@ -141,7 +145,8 @@ export const useMetaStore = create<MetaStore>()(
       }
     }),
     {
-      name: 'wtc-pairing-storage'
+      name: 'wtc-pairing-storage-v2', // Nouvelle clé pour forcer une remise à zéro propre du cache
+      version: 2
     }
   )
 );
