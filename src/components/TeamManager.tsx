@@ -1,7 +1,7 @@
 // src/components/TeamManager.tsx
 import React, { useState } from 'react';
 import { useMetaStore } from '../store/useMetaStore';
-import { Users, UserPlus, Trash2, Shield, Upload } from 'lucide-react';
+import { Users, UserPlus, Trash2, Shield, Upload, Sparkles, Wand2 } from 'lucide-react';
 import { Player } from '../types';
 
 export const TeamManager: React.FC = () => {
@@ -58,7 +58,6 @@ export const TeamManager: React.FC = () => {
     });
 
     if (importTarget === 'myTeam') {
-      // Ajoute à l'équipe existante ou remplace selon le besoin
       const currentPlayers = myTeam.players || [];
       store.setMyTeam({
         ...myTeam,
@@ -75,6 +74,66 @@ export const TeamManager: React.FC = () => {
 
     setRawText('');
     alert(`Import réussi pour ${importTarget === 'myTeam' ? 'Mon Équipe' : "l'Équipe Adverse"} !`);
+  };
+
+  // --- FONCTIONS DE GÉNÉRATION AUTOMATIQUE ---
+  const handleGenerateRandomOpponent = () => {
+    const sampleNames = ["Alex", "Thomas", "Nicolas", "Julien", "David", "Maxime", "Lucas", "Romain", "Antoine", "Kévin"];
+    const sampleFactions = ["Space Marines", "Aeldari", "Orks", "Tyranids", "Necrons", "World Eaters", "Tau Empire", "Astra Militarum", "Death Guard", "Drukhari"];
+    
+    // Génère une équipe de 5 à 8 joueurs aléatoires
+    const teamSize = 5;
+    const players: Player[] = Array.from({ length: teamSize }, (_, i) => ({
+      id: crypto.randomUUID(),
+      name: `${sampleNames[Math.floor(Math.random() * sampleNames.length)]} ${i + 1}`,
+      faction: sampleFactions[Math.floor(Math.random() * sampleFactions.length)],
+      disposition: 'Balanced',
+      tablePreferences: {}
+    }));
+
+    store.setOpponentTeam({
+      id: crypto.randomUUID(),
+      name: "Équipe Adverse Aléatoire",
+      size: players.length,
+      players
+    });
+  };
+
+  const handleGenerateMetaTeam = () => {
+    const matrices = store.matrices?.factionVsFaction || {};
+    const allFactions = Object.keys(matrices);
+
+    if (allFactions.length === 0) {
+      alert("Veuillez d'abord remplir ou charger des données dans le tableau de Meta (matrice Faction vs Faction).");
+      return;
+    }
+
+    // Calcule la meilleure faction basée sur les moyennes du tableau
+    const scoredFactions = allFactions.map(faction => {
+      const scores = Object.values(matrices[faction] || {}) as number[];
+      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+      return { faction, avg };
+    }).sort((a, b) => b.avg - a.avg);
+
+    const topFaction = scoredFactions[0]?.faction || "Space Marines";
+    const sampleNames = ["Champion 1", "Champion 2", "Champion 3", "Champion 4", "Champion 5"];
+
+    const optimizedPlayers: Player[] = sampleNames.map((name, i) => ({
+      id: crypto.randomUUID(),
+      name: `${name} (${topFaction})`,
+      faction: topFaction,
+      disposition: 'Balanced',
+      tablePreferences: {}
+    }));
+
+    store.setMyTeam({
+      ...myTeam,
+      name: `Meta Dream Team (${topFaction})`,
+      players: optimizedPlayers,
+      size: optimizedPlayers.length
+    });
+
+    alert(`"Mon Équipe" optimisée générée avec succès (${topFaction}) !`);
   };
 
   const currentTeamToDisplay = activeTab === 'myTeam' ? myTeam : opponentTeam;
@@ -115,9 +174,33 @@ export const TeamManager: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* COLONNE DE GAUCHE : IMPORT BRUT & AJOUT MANUEL */}
+        {/* COLONNE DE GAUCHE : IMPORT BRUT, GÉNÉRATION AUTO & AJOUT MANUEL */}
         <div className="space-y-6 lg:col-span-1">
           
+          {/* Bloc de Génération Automatique */}
+          <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg space-y-3">
+            <h3 className="text-md font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-400" />
+              Génération Automatique
+            </h3>
+            <p className="text-xs text-slate-400">Générez instantanément des équipes prêtes à l'emploi.</p>
+
+            <div className="space-y-2 pt-1">
+              <button 
+                onClick={handleGenerateRandomOpponent}
+                className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-2"
+              >
+                <Wand2 className="w-4 h-4" /> Générer équipe adverse aléatoire
+              </button>
+              <button 
+                onClick={handleGenerateMetaTeam}
+                className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" /> Générer Mon Équipe (Optimisée Meta)
+              </button>
+            </div>
+          </div>
+
           {/* Bloc d'import brut avec choix de la cible */}
           <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg space-y-4">
             <h3 className="text-md font-bold text-white flex items-center gap-2">
@@ -128,7 +211,6 @@ export const TeamManager: React.FC = () => {
               Format requis (1 joueur par ligne) : <code className="text-sky-300">Nom - Faction</code>
             </p>
 
-            {/* Choix de la cible de l'import */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-300">Importer pour :</label>
               <div className="grid grid-cols-2 gap-2">
@@ -150,7 +232,7 @@ export const TeamManager: React.FC = () => {
             </div>
 
             <textarea 
-              rows={6}
+              rows={5}
               placeholder="Ex: Jean Dupont - Space Marines&#10;Marc Leroy - Aeldari"
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
@@ -221,7 +303,7 @@ export const TeamManager: React.FC = () => {
             <div className="p-12 text-center text-slate-500 space-y-2">
               <Users className="w-10 h-10 mx-auto opacity-40" />
               <p className="text-sm">Aucun joueur enregistré dans cette équipe pour le moment.</p>
-              <p className="text-xs">Utilisez l'import brut à gauche pour ajouter vos listes rapidement.</p>
+              <p className="text-xs">Utilisez l'import brut, l'ajout manuel ou la génération automatique à gauche.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
