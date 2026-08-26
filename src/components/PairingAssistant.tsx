@@ -1,21 +1,26 @@
 // src/components/PairingAssistant.tsx
 import React, { useState, useMemo } from 'react';
 import { useMetaStore, RoundPairing } from '../store/useMetaStore';
-import { Shield, Target, Swords, Trash2, CheckCircle2, Play, Calendar, Layers } from 'lucide-react';
+import { Shield, Target, Swords, Trash2, CheckCircle2, Play, Calendar, Layers, Users } from 'lucide-react';
 
 export const PairingAssistant: React.FC = () => {
   const store = useMetaStore();
   
   const myTeam = store?.myTeam || { name: 'Mon Équipe', players: [] };
-  const oppTeam = store?.opponentTeam || { name: 'Équipe Adverse', players: [] };
   const matrices = store?.matrices || { factionVsFaction: {} };
   const rounds = store?.rounds || [];
   const activeRoundId = store?.activeRoundId || null;
+  const tournamentOpponents = store?.tournamentOpponents || [];
 
   const myPlayers = myTeam.players || [];
-  const oppPlayers = oppTeam.players || [];
 
+  // Récupérer la ronde active et son équipe adverse assignée s'il y en a une
   const activeRound = rounds.find(r => r.id === activeRoundId);
+  const activeAssignedOppTeam = tournamentOpponents.find(t => t.id === activeRound?.assignedOpponentTeamId);
+  
+  // Si une équipe est assignée à la ronde active, on l'utilise, sinon on prend l'équipe adverse générale du store
+  const activeOppTeam = activeAssignedOppTeam || store?.opponentTeam || { name: 'Équipe Adverse', players: [] };
+  const oppPlayers = activeOppTeam.players || [];
 
   // --- NAVIGATION INTERNE ENTRE L'ASSISTANT ET L'ONGLET RONDES ---
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
@@ -124,7 +129,7 @@ export const PairingAssistant: React.FC = () => {
             Gestionnaire de Tournoi WTC
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Gérez vos phases de draft et consultez l'historique des rondes.
+            Gérez vos phases de draft et consultez l'historique des rondes par équipe adverse.
           </p>
         </div>
 
@@ -155,7 +160,7 @@ export const PairingAssistant: React.FC = () => {
               <Calendar className="w-12 h-12 text-sky-400 mx-auto" />
               <h3 className="text-lg font-bold text-white">Aucune ronde active pour le moment</h3>
               <p className="text-sm text-slate-400 max-w-md mx-auto">
-                Lancez une nouvelle ronde de tournoi pour commencer la phase de pairing WTC et enregistrer automatiquement les résultats dans l'onglet des rondes.
+                Lancez une nouvelle ronde de tournoi pour commencer la phase de pairing WTC et enregistrer automatiquement les résultats.
               </p>
               <button 
                 onClick={() => { 
@@ -170,15 +175,20 @@ export const PairingAssistant: React.FC = () => {
             </div>
           ) : (
             <div className="bg-slate-900 border border-sky-500/50 p-6 rounded-xl shadow-2xl space-y-6">
-              <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-4 gap-4">
                 <div className="flex items-center gap-3">
                   <h3 className="text-xl font-bold text-sky-400 flex items-center gap-2">
                     <Target className="w-6 h-6" />
-                    Phase de Draft : {activeRound?.name}
+                    {activeRound?.name}
                   </h3>
                   <span className="px-2.5 py-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold rounded-full">
                     En cours
                   </span>
+                  {activeAssignedOppTeam && (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-rose-300 bg-rose-950/40 border border-rose-500/30 px-3 py-1 rounded-lg">
+                      <Users className="w-3.5 h-3.5" /> Adversaire : {activeAssignedOppTeam.name}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-sm font-bold text-slate-300">
@@ -193,8 +203,20 @@ export const PairingAssistant: React.FC = () => {
                 </div>
               </div>
 
-              {/* Si tous les joueurs ont été joués */}
-              {availableMyPlayers.length === 0 ? (
+              {/* Si aucun joueur adverse n'est chargé */}
+              {oppPlayers.length === 0 ? (
+                <div className="p-8 text-center space-y-4 bg-slate-950/50 rounded-xl border border-rose-500/30">
+                  <Users className="w-12 h-12 text-rose-400 mx-auto" />
+                  <h4 className="text-lg font-bold text-white">Aucune équipe adverse assignée ou roster vide !</h4>
+                  <p className="text-sm text-slate-400">Veuillez assigner une équipe adverse à cette ronde dans l'onglet "Rondes" pour lancer les pairings.</p>
+                  <button 
+                    onClick={() => setActiveTab('history')}
+                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-sm transition"
+                  >
+                    Aller assigner une équipe
+                  </button>
+                </div>
+              ) : availableMyPlayers.length === 0 ? (
                 <div className="p-8 text-center space-y-4 bg-slate-950/50 rounded-xl border border-slate-800">
                   <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
                   <h4 className="text-lg font-bold text-white">Tous les matchs de cette ronde ont été complétés !</h4>
@@ -341,8 +363,8 @@ export const PairingAssistant: React.FC = () => {
         <div className="space-y-6">
           <div className="flex justify-between items-center bg-slate-900 border border-slate-700 p-4 rounded-xl">
             <div>
-              <h3 className="text-lg font-bold text-white">Historique & Résultats des Rondes</h3>
-              <p className="text-xs text-slate-400">Consultez, reprenez ou supprimez les rondes de votre tournoi.</p>
+              <h3 className="text-lg font-bold text-white">Historique & Assignation des Rondes</h3>
+              <p className="text-xs text-slate-400">Assignez une équipe adverse à chaque ronde et consultez les résultats.</p>
             </div>
             <button 
               onClick={() => { 
@@ -366,9 +388,11 @@ export const PairingAssistant: React.FC = () => {
             <div className="space-y-4">
               {rounds.map(round => {
                 const roundTotalScore = (round.pairings || []).reduce((acc, curr) => acc + (curr.score || 0), 0);
+                const assignedOpp = tournamentOpponents.find(t => t.id === round.assignedOpponentTeamId);
+
                 return (
                   <div key={round.id} className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-md space-y-4">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-3 gap-3">
                       <div className="flex items-center gap-3">
                         <h3 className="text-lg font-bold text-white">{round.name}</h3>
                         <span className={`px-2.5 py-1 rounded text-xs font-bold ${round.isCompleted ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
@@ -376,7 +400,7 @@ export const PairingAssistant: React.FC = () => {
                         </span>
                         {round.pairings && round.pairings.length > 0 && (
                           <span className="text-xs font-semibold text-slate-300">
-                            Score total : <span className={roundTotalScore >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{roundTotalScore > 0 ? `+${roundTotalScore}` : roundTotalScore}</span>
+                            Score : <span className={roundTotalScore >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{roundTotalScore > 0 ? `+${roundTotalScore}` : roundTotalScore}</span>
                           </span>
                         )}
                       </div>
@@ -396,6 +420,26 @@ export const PairingAssistant: React.FC = () => {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                    </div>
+
+                    {/* Sélecteur d'équipe adverse pour cette ronde */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/80 p-3 rounded-lg border border-slate-700">
+                      <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
+                        <Users className="w-4 h-4 text-rose-400" /> Équipe adverse de cette ronde :
+                      </span>
+                      <select
+                        value={round.assignedOpponentTeamId || ''}
+                        onChange={(e) => store.assignOpponentToRound(round.id, e.target.value)}
+                        className="w-full sm:w-auto flex-1 bg-slate-900 border border-slate-600 text-white rounded p-2 text-xs outline-none focus:border-sky-500"
+                      >
+                        <option value="">-- Choisir parmi vos équipes adverses enregistrées --</option>
+                        {tournamentOpponents.map(oppTeam => (
+                          <option key={oppTeam.id} value={oppTeam.id}>{oppTeam.name} ({oppTeam.players.length} joueurs)</option>
+                        ))}
+                      </select>
+                      {assignedOpp && (
+                        <span className="text-xs text-sky-400 font-semibold">{assignedOpp.players.length} joueurs chargés</span>
+                      )}
                     </div>
 
                     {/* Liste des matchs de cette ronde */}
