@@ -1,35 +1,146 @@
-// src/store/useMetaStore.ts
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { 
-  BASELINE_GT_WINRATES, 
-  generateWTCMatrix, 
-  fetchLatestTournamentMeta 
-} from '../services/metaFetcher';
+import { Team, Player, MatchupMatrices, ScoreRating } from '../types';
+import { BASELINE_GT_WINRATES, generateWTCMatrix, fetchLatestTournamentMeta } from '../services/metaFetcher';
 
-interface MetaState {
+export interface MetaState {
+  myTeam: Team;
+  opponentTeam: Team;
   winrates: Record<string, number>;
-  matrices: Record<string, Record<string, number>>;
+  matrices: MatchupMatrices;
   isSyncing: boolean;
   lastUpdated: string;
   dataSource: string;
-  
-  // Actions
+
+  setMyTeam: (team: Team) => void;
+  setOpponentTeam: (team: Team) => void;
+  addMyPlayer: (player: Player) => void;
+  updateMyPlayer: (id: string, updated: Partial<Player>) => void;
+  deleteMyPlayer: (id: string) => void;
+  addOpponentPlayer: (player: Player) => void;
+  updateOpponentPlayer: (id: string, updated: Partial<Player>) => void;
+  deleteOpponentPlayer: (id: string) => void;
+
   refreshMetaFromAI: () => Promise<void>;
   updateMatrixCell: (factionA: string, factionB: string, value: number) => void;
+  updateMatrices: (matrices: MatchupMatrices) => void;
   resetToDefaults: () => void;
+  loadInitialData: () => void;
 }
 
-const defaultMatrix = generateWTCMatrix(BASELINE_GT_WINRATES);
+const DEFAULT_MY_TEAM: Team = {
+  id: 'my-team',
+  name: 'Mon Équipe',
+  size: 8,
+  players: [
+    { id: 'p1', name: 'Capitaine', faction: 'Space Marines', disposition: 'Take & Hold', tablePreferences: {} },
+    { id: 'p2', name: 'Joueur 2', faction: 'Orks', disposition: 'Purge the Foe', tablePreferences: {} },
+    { id: 'p3', name: 'Joueur 3', faction: 'Aeldari', disposition: 'Reconnaissance', tablePreferences: {} },
+    { id: 'p4', name: 'Joueur 4', faction: 'Necrons', disposition: 'Take & Hold', tablePreferences: {} }
+  ]
+};
+
+const DEFAULT_OPP_TEAM: Team = {
+  id: 'opp-team',
+  name: 'Équipe Adverse',
+  size: 8,
+  players: [
+    { id: 'o1', name: 'Adversaire 1', faction: 'Tyranids', disposition: 'Disruption', tablePreferences: {} },
+    { id: 'o2', name: 'Adversaire 2', faction: 'Thousand Sons', disposition: 'Priority Asset', tablePreferences: {} },
+    { id: 'o3', name: 'Adversaire 3', faction: 'T\'au Empire', disposition: 'Take & Hold', tablePreferences: {} },
+    { id: 'o4', name: 'Adversaire 4', faction: 'World Eaters', disposition: 'Purge the Foe', tablePreferences: {} }
+  ]
+};
+
+const defaultFactionMatrix = generateWTCMatrix(BASELINE_GT_WINRATES) as Record<string, Record<string, ScoreRating>>;
+
+const initialMatrices: MatchupMatrices = {
+  factionVsFaction: defaultFactionMatrix,
+  dispositionVsDisposition: {
+    'Purge the Foe': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Reconnaissance': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Take & Hold': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Disruption': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Priority Asset': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 }
+  },
+  isManuallyOverridden: false
+};
 
 export const useMetaStore = create<MetaState>()(
   persist(
     (set, get) => ({
+      myTeam: DEFAULT_MY_TEAM,
+      opponentTeam: DEFAULT_OPP_TEAM,
       winrates: BASELINE_GT_WINRATES,
-      matrices: defaultMatrix,
+      matrices: initialMatrices,
       isSyncing: false,
-      lastUpdated: "Août 2026 (Listhammer GT Data)",
-      dataSource: "Stat Check & Listhammer GT Meta",
+      lastUpdated: 'Août 2026 (Listhammer GT Data)',
+      dataSource: 'Stat Check & Listhammer GT Meta',
+
+      setMyTeam: (team) => set({ myTeam: team }),
+      setOpponentTeam: (team) => set({ opponentTeam: team }),
+
+      addMyPlayer: (player) =>
+        set((state) => ({
+          myTeam: { ...state.myTeam, players: [...(state.myTeam?.players || []), player] }
+        })),
+
+      updateMyPlayer: (id, updated) =>
+        set((state) => ({
+          myTeam: {
+            ...state.myTeam,
+            players: (state.myTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
+          }
+        })),
+
+      deleteMyPlayer: (id) =>
+        set((state) => ({
+          myTeam: {
+            ...state.myTeam,
+            players: (state.myTeam?.players || []).filter((p) => p.id !== id)
+          }
+        })),
+
+      addOpponentPlayer: (player) =>
+        set((state) => ({
+          opponentTeam: { ...state.opponentTeam, players: [...(state.opponentTeam?.players || []), player] }
+        })),
+
+      updateOpponentPlayer: (id, updated) =>
+        set((state) => ({
+          opponentTeam: {
+            ...state.opponentTeam,
+            players: (state.opponentTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
+          }
+        })),
+
+      deleteOpponentPlayer: (id) =>
+        set((state) => ({
+          opponentTeam: {
+            ...state.opponentTeam,
+            players: (state.opponentTeam?.players || []).filter((p) => p.id !== id)
+          }
+        })),
+
+      updateMatrices: (matrices) => set({ matrices }),
+
+      updateMatrixCell: (fA, fB, value) => {
+        const currentMatrices = get().matrices;
+        const currentFxF = currentMatrices.factionVsFaction || {};
+        const updatedFxF = {
+          ...currentFxF,
+          [fA]: { ...(currentFxF[fA] || {}), [fB]: value as ScoreRating },
+          [fB]: { ...(currentFxF[fB] || {}), [fA]: -value as ScoreRating }
+        };
+        set({
+          matrices: {
+            ...currentMatrices,
+            factionVsFaction: updatedFxF,
+            isManuallyOverridden: true
+          },
+          dataSource: 'Modifié manuellement'
+        });
+      },
 
       refreshMetaFromAI: async () => {
         set({ isSyncing: true });
@@ -37,38 +148,33 @@ export const useMetaStore = create<MetaState>()(
           const freshData = await fetchLatestTournamentMeta();
           set({
             winrates: freshData.winrates,
-            matrices: freshData.matrix,
+            matrices: {
+              ...get().matrices,
+              factionVsFaction: freshData.matrix as Record<string, Record<string, ScoreRating>>,
+              isManuallyOverridden: false
+            },
             lastUpdated: freshData.lastUpdated,
             dataSource: freshData.source,
             isSyncing: false
           });
-        } catch (error) {
-          console.error("Erreur lors du rafraîchissement Méta:", error);
+        } catch {
           set({ isSyncing: false });
         }
-      },
-
-      updateMatrixCell: (fA, fB, value) => {
-        const current = get().matrices;
-        const updated = {
-          ...current,
-          [fA]: { ...current[fA], [fB]: value },
-          [fB]: { ...current[fB], [fA]: -value } // Maintien de l'antisymétrie WTC
-        };
-        set({ matrices: updated, dataSource: "Modifié manuellement (Capitaine)" });
       },
 
       resetToDefaults: () => {
         set({
           winrates: BASELINE_GT_WINRATES,
-          matrices: generateWTCMatrix(BASELINE_GT_WINRATES),
-          lastUpdated: "Réinitialisé aux données Listhammer GT",
-          dataSource: "Stat Check & Listhammer GT Meta"
+          matrices: initialMatrices,
+          lastUpdated: 'Réinitialisé aux données Listhammer GT',
+          dataSource: 'Stat Check & Listhammer GT Meta'
         });
-      }
+      },
+
+      loadInitialData: () => {}
     }),
     {
-      name: 'wtc-meta-storage',
+      name: 'wtc-meta-storage-v2'
     }
   )
 );
