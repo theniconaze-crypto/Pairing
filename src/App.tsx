@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Swords, Grid, Users, FileCode, Sliders, Trophy, ShieldCheck } from 'lucide-react';
+import { Swords, Grid, Sliders, Trophy, ShieldCheck, Users } from 'lucide-react';
 import { useMetaStore } from './store/useMetaStore';
 import { PairingAssistant } from './components/PairingAssistant';
 import { ZoomableMatrix } from './components/ZoomableMatrix';
-import { ListParser } from './components/ListParser';
+import { RosterManager } from './components/RosterManager';
 import { MetaEditor } from './components/MetaEditor';
 import { TournamentRounds } from './components/TournamentRounds';
 
 export const App: React.FC = () => {
   const { myTeam, opponentTeam, matrices, loadInitialData } = useMetaStore();
-  const [activeTab, setActiveTab] = useState<'pairing' | 'matrix' | 'rounds' | 'meta' | 'import'>('pairing');
+  const [activeTab, setActiveTab] = useState<'pairing' | 'matrix' | 'rounds' | 'meta' | 'rosters'>('rosters');
   const [availableMaps] = useState<string[]>(['Map 1', 'Map 2', 'Map 3', 'Map 4', 'Map 5', 'Map 6', 'Map 7', 'Map 8']);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export const App: React.FC = () => {
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        {activeTab === 'pairing' && myTeam && opponentTeam && (
+        {activeTab === 'pairing' && (
           <PairingAssistant
             myPlayers={myTeam.players}
             oppPlayers={opponentTeam.players}
@@ -37,7 +37,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'matrix' && myTeam && opponentTeam && (
+        {activeTab === 'matrix' && (
           <div className="h-[calc(100vh-130px)] p-2">
             <ZoomableMatrix myPlayers={myTeam.players} oppPlayers={opponentTeam.players} matrices={matrices} />
           </div>
@@ -45,10 +45,14 @@ export const App: React.FC = () => {
 
         {activeTab === 'rounds' && <TournamentRounds />}
         {activeTab === 'meta' && <MetaEditor />}
-        {activeTab === 'import' && <ListParser onParsed={() => setActiveTab('pairing')} />}
+        {activeTab === 'rosters' && <RosterManager />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 px-2 py-2 flex items-center justify-around pb-6">
+        <button onClick={() => setActiveTab('rosters')} className={`flex flex-col items-center gap-1 ${activeTab === 'rosters' ? 'text-sky-400' : 'text-slate-500'}`}>
+          <Users className="w-5 h-5" />
+          <span className="text-[10px]">Rosters</span>
+        </button>
         <button onClick={() => setActiveTab('pairing')} className={`flex flex-col items-center gap-1 ${activeTab === 'pairing' ? 'text-sky-400' : 'text-slate-500'}`}>
           <Swords className="w-5 h-5" />
           <span className="text-[10px]">Pairing</span>
@@ -64,10 +68,6 @@ export const App: React.FC = () => {
         <button onClick={() => setActiveTab('meta')} className={`flex flex-col items-center gap-1 ${activeTab === 'meta' ? 'text-sky-400' : 'text-slate-500'}`}>
           <Sliders className="w-5 h-5" />
           <span className="text-[10px]">Meta</span>
-        </button>
-        <button onClick={() => setActiveTab('import')} className={`flex flex-col items-center gap-1 ${activeTab === 'import' ? 'text-sky-400' : 'text-slate-500'}`}>
-          <FileCode className="w-5 h-5" />
-          <span className="text-[10px]">Parser</span>
         </button>
       </nav>
     </div>
