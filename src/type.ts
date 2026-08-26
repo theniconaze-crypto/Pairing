@@ -13,7 +13,7 @@ export interface Player {
   faction: string;
   disposition: DispositionArchetype;
   rawList?: string;
-  tablePreferences: Record<string, ScoreRating>; // key: mapId (ex: "Map 1") -> score (-3 a +3)
+  tablePreferences: Record<string, ScoreRating>;
 }
 
 export interface Team {
@@ -26,26 +26,19 @@ export interface Team {
 export interface MatchupMatrices {
   factionVsFaction: Record<string, Record<string, ScoreRating>>;
   dispositionVsDisposition: Record<DispositionArchetype, Record<DispositionArchetype, ScoreRating>>;
+  isManuallyOverridden?: boolean;
 }
 
 export type StrategyOption = 'MAX_SCORE' | 'MIN_RISK';
+export type InitiativeOption = 'WE_DEFEND_FIRST' | 'OPPONENT_DEFENDS_FIRST';
 
-export interface PairingAssignment {
+export interface PairedMatchup {
+  stepNumber: number;
   myPlayerId: string;
   oppPlayerId: string;
   mapId: string;
   predictedScoreWTC: number;
   actualScoreWTC?: number;
-}
-
-export interface PairingStepState {
-  stepNumber: number;
-  myAvailablePlayerIds: string[];
-  oppAvailablePlayerIds: string[];
-  availableMapIds: string[];
-  currentDefenderId?: string;
-  currentAttackerIds?: string[];
-  assignments: PairingAssignment[];
 }
 
 export interface RoundSession {
@@ -55,6 +48,7 @@ export interface RoundSession {
   myTeam: Team;
   opponentTeam: Team;
   strategy: StrategyOption;
-  assignments: PairingAssignment[];
-  status: 'IN_PROGRESS' | 'COMPLETED';
+  initiative: InitiativeOption;
+  pairings: PairedMatchup[];
+  status: 'DRAFTING' | 'IN_MATCH' | 'COMPLETED';
 }
