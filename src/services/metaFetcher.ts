@@ -48,24 +48,23 @@ export function generateWTCMatrix(winrates: Record<string, number>): Record<stri
   return matrix;
 }
 
-// APPEL DE L'API GEMINI 3.5 FLASH
+// APPEL DE L'API GEMINI 3.5 FLASH (Strictement ciblé V11 Warhammer 40k)
 export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResult> {
   if (!apiKey) throw new Error("Clé API Gemini manquante.");
 
-  const prompt = `Tu es un expert en statistiques de tournois Warhammer 40,000 (WTC). 
-  Analyse l'état actuel de la méta V11 et fournis les taux de victoires (winrates) estimés les plus récents.
-  Tu DOIS retourner les données UNIQUEMENT sous la forme d'un objet JSON strict.
-  Les clés doivent être EXACTEMENT les noms de factions suivants en anglais, et les valeurs doivent être des nombres décimaux (pourcentages de 0 à 100) :
+  const prompt = `Tu es un expert mondial en statistiques de tournois compétitifs Warhammer 40,000 (règles de la 11e édition / V11).
+  Analyse l'état actuel et exclusif de la méta de la V11 Warhammer 40K. Ne prends pas en compte les anciennes éditions.
+  Fournis les taux de victoires (winrates) estimés les plus récents pour le format compétitif de la V11.
+  Tu DOIS retourner les données UNIQUEMENT sous la forme d'un objet JSON strict, sans texte superflu ni balises Markdown additionnelles.
+  Les clés doivent être EXACTEMENT et exclusivement les noms de factions suivants en anglais, et les valeurs doivent être des nombres décimaux représentant des pourcentages de 0 à 100 :
   ${JSON.stringify(FACTION_LIST)}
   Format de sortie strict attendu : {"winrates": {"Faction Name": 50.5, ...}}`;
 
-  // Utilisation de l'endpoint officiel pour gemini-3.5-flash
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      // Forçage de la réponse structurée en JSON pur
       generationConfig: { 
         response_mime_type: "application/json" 
       } 
@@ -87,7 +86,6 @@ export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResu
   const aiResult = JSON.parse(rawText);
   const aiWinrates = aiResult.winrates;
 
-  // Sécurité : comble les éventuelles factions manquantes avec le winrate par défaut (50%)
   const safeWinrates: Record<string, number> = {};
   FACTION_LIST.forEach(faction => {
     safeWinrates[faction] = aiWinrates[faction] !== undefined ? Number(aiWinrates[faction]) : 50.0;
@@ -98,7 +96,7 @@ export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResu
 
   return {
     lastUpdated: dateStr,
-    source: "Google Gemini 3.5 Flash AI (En direct)",
+    source: "Google Gemini 3.5 Flash AI (Méta V11 W40K Direct)",
     winrates: safeWinrates,
     matrix: generateWTCMatrix(safeWinrates)
   };
