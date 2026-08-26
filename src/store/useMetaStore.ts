@@ -25,7 +25,6 @@ interface MetaStore {
   assignOpponentToRound: (roundId: string, oppTeamId: string) => void;
   saveRoundPairings: (roundId: string, pairings: RoundPairing[]) => void;
 
-  // Nouvelles actions de génération
   generateRandomOpponentTeam: () => void;
   generateMetaOptimizedTeam: () => void;
 }
@@ -94,7 +93,6 @@ export const useMetaStore = create<MetaStore>()(
         rounds: state.rounds.map(r => r.id === roundId ? { ...r, pairings } : r)
       })),
 
-      // Logique de génération d'équipe aléatoire
       generateRandomOpponentTeam: () => {
         const sampleNames = ["Alex", "Thomas", "Nicolas", "Julien", "David", "Maxime", "Lucas", "Romain"];
         const sampleFactions = ["Space Marines", "Aeldari", "Orks", "Tyranids", "Necrons", "World Eaters", "Tau Empire", "Astra Militarum"];
@@ -110,47 +108,40 @@ export const useMetaStore = create<MetaStore>()(
         set({ opponentTeam: { id: crypto.randomUUID(), name: "Équipe Adverse Aléatoire", size: players.length, players } });
       },
 
-      // Logique de génération optimisée Meta
       generateMetaOptimizedTeam: () => {
         const matrices = get().matrices?.factionVsFaction || {};
         const allFactions = Object.keys(matrices);
         
-        if (allFactions.length === 0) {
-          alert("La matrice Meta est vide. Veuillez remplir les scores de factions d'abord.");
-          return;
-        }
+        if (allFactions.length === 0) return; // Si la matrice est vide, on arrête
 
         const scoredFactions = allFactions.map(faction => {
           const scores = Object.values(matrices[faction] || {}) as number[];
           const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
           return { faction, avg };
-        }).sort((a, b) => bPour pouvoir te fournir les codes **complets et exacts** à modifier, il me manque une information essentielle : je n'ai pas accès à ton code actuel. 
+        }).sort((a, b) => b.avg - a.avg); // Tri descendant
 
-Pour que la solution s'intègre parfaitement, j'ai besoin de connaître la structure de tes données (comment sont stockés tes personnages/joueurs et ce fameux "tableau meta") ainsi que l'architecture de ton interface.
+        const topFaction = scoredFactions[0]?.faction || "Space Marines";
 
-En attendant, voici la logique JavaScript standard que tu pourras adapter ou qui me servira de base dès que tu m'auras fourni ton code.
+        const optimizedPlayers: Player[] = Array.from({ length: 5 }, (_, i) => ({
+          id: crypto.randomUUID(),
+          name: `Champion ${i + 1}`,
+          faction: topFaction,
+          disposition: 'Balanced',
+          tablePreferences: {}
+        }));
 
-### 1. Logique pour générer l'équipe adverse aléatoire
-
-L'idéal est d'utiliser un algorithme de mélange (comme le *Fisher-Yates*) pour piocher au hasard dans ta base de données de personnages sans doublons.
-
-```javascript
-// Fonction pour générer une équipe aléatoire
-function genererEquipeAdverseAleatoire(baseDeDonnees, tailleEquipe = 4) {
-  // On crée une copie pour ne pas altérer la base originale
-  let personnagesDisponibles = [...baseDeDonnees];
-  let equipeAdverse = [];
-
-  for (let i = 0; i < tailleEquipe; i++) {
-    if (personnagesDisponibles.length === 0) break;
-    
-    // Sélection d'un index aléatoire
-    const indexAleatoire = Math.floor(Math.random() * personnagesDisponibles.length);
-    
-    // Ajout du personnage à l'équipe et retrait des choix possibles
-    equipeAdverse.push(personnagesDisponibles[indexAleatoire]);
-    personnagesDisponibles.splice(indexAleatoire, 1);
-  }
-
-  return equipeAdverse;
-}
+        set((state) => ({
+          myTeam: {
+            ...state.myTeam,
+            name: `Meta Dream Team (${topFaction})`,
+            players: optimizedPlayers,
+            size: optimizedPlayers.length
+          }
+        }));
+      }
+    }),
+    {
+      name: 'wtc-pairing-storage'
+    }
+  )
+);
