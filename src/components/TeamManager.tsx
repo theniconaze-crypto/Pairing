@@ -7,17 +7,12 @@ import { Player } from '../types';
 export const TeamManager: React.FC = () => {
   const store = useMetaStore();
 
-  const myTeam = store?.myTeam || { name: 'Mon Équipe', players: [] };
-  const opponentTeam = store?.opponentTeam || { name: 'Équipe Adverse', players: [] };
+  const myTeam = store.myTeam || { name: 'Mon Équipe', players: [] };
+  const opponentTeam = store.opponentTeam || { name: 'Équipe Adverse', players: [] };
 
-  // Onglet d'affichage actif (Mon équipe vs Équipe adverse active)
   const [activeTab, setActiveTab] = useState<'myTeam' | 'opponentTeam'>('myTeam');
-
-  // Sélecteur de cible pour l'import brut
   const [importTarget, setImportTarget] = useState<'myTeam' | 'opponentTeam'>('myTeam');
   const [rawText, setRawText] = useState('');
-
-  // Formulaire d'ajout manuel d'un joueur unique
   const [newName, setNewName] = useState('');
   const [newFaction, setNewFaction] = useState('Space Marines');
 
@@ -34,55 +29,18 @@ export const TeamManager: React.FC = () => {
     };
 
     if (activeTab === 'myTeam') {
-      if (typeof store.addMyPlayer === 'function') {
-        store.addMyPlayer(newPlayer);
-      } else if (typeof store.setMyTeam === 'function') {
-        const currentPlayers = myTeam.players || [];
-        store.setMyTeam({
-          ...myTeam,
-          players: [...currentPlayers, newPlayer],
-          size: currentPlayers.length + 1
-        });
-      }
+      store.addMyPlayer(newPlayer);
     } else {
-      if (typeof store.addOpponentPlayer === 'function') {
-        store.addOpponentPlayer(newPlayer);
-      } else if (typeof store.setOpponentTeam === 'function') {
-        const currentPlayers = opponentTeam.players || [];
-        store.setOpponentTeam({
-          ...opponentTeam,
-          players: [...currentPlayers, newPlayer],
-          size: currentPlayers.length + 1
-        });
-      }
+      store.addOpponentPlayer(newPlayer);
     }
-
     setNewName('');
   };
 
   const handleDeletePlayer = (playerId: string) => {
     if (activeTab === 'myTeam') {
-      if (typeof store.deleteMyPlayer === 'function') {
-        store.deleteMyPlayer(playerId);
-      } else if (typeof store.setMyTeam === 'function') {
-        const updatedPlayers = (myTeam.players || []).filter(p => p.id !== playerId);
-        store.setMyTeam({
-          ...myTeam,
-          players: updatedPlayers,
-          size: updatedPlayers.length
-        });
-      }
+      store.deleteMyPlayer(playerId);
     } else {
-      if (typeof store.deleteOpponentPlayer === 'function') {
-        store.deleteOpponentPlayer(playerId);
-      } else if (typeof store.setOpponentTeam === 'function') {
-        const updatedPlayers = (opponentTeam.players || []).filter(p => p.id !== playerId);
-        store.setOpponentTeam({
-          ...opponentTeam,
-          players: updatedPlayers,
-          size: updatedPlayers.length
-        });
-      }
+      store.deleteOpponentPlayer(playerId);
     }
   };
 
@@ -115,67 +73,22 @@ export const TeamManager: React.FC = () => {
         size: newPlayers.length
       });
     }
-
     setRawText('');
-    alert(`Import réussi pour ${importTarget === 'myTeam' ? 'Mon Équipe' : "l'Équipe Adverse"} !`);
   };
 
-  // --- FONCTIONS DE GÉNÉRATION AUTOMATIQUE ---
+  // NOUVELLES FONCTIONS DE GÉNÉRATION APPELLANT LE STORE
   const handleGenerateRandomOpponent = () => {
-    const sampleNames = ["Alex", "Thomas", "Nicolas", "Julien", "David", "Maxime", "Lucas", "Romain", "Antoine", "Kévin"];
-    const sampleFactions = ["Space Marines", "Aeldari", "Orks", "Tyranids", "Necrons", "World Eaters", "Tau Empire", "Astra Militarum", "Death Guard", "Drukhari"];
-    
-    const teamSize = 5;
-    const players: Player[] = Array.from({ length: teamSize }, (_, i) => ({
-      id: crypto.randomUUID(),
-      name: `${sampleNames[Math.floor(Math.random() * sampleNames.length)]} ${i + 1}`,
-      faction: sampleFactions[Math.floor(Math.random() * sampleFactions.length)],
-      disposition: 'Balanced',
-      tablePreferences: {}
-    }));
-
-    store.setOpponentTeam({
-      id: crypto.randomUUID(),
-      name: "Équipe Adverse Aléatoire",
-      size: players.length,
-      players
-    });
+    if (store.generateRandomOpponentTeam) {
+      store.generateRandomOpponentTeam();
+      setActiveTab('opponentTeam'); // Bascule sur l'onglet adverse pour voir le résultat
+    }
   };
 
   const handleGenerateMetaTeam = () => {
-    const matrices = store.matrices?.factionVsFaction || {};
-    const allFactions = Object.keys(matrices);
-
-    if (allFactions.length === 0) {
-      alert("Veuillez d'abord remplir ou charger des données dans le tableau de Meta (matrice Faction vs Faction).");
-      return;
+    if (store.generateMetaOptimizedTeam) {
+      store.generateMetaOptimizedTeam();
+      setActiveTab('myTeam'); // Bascule sur l'onglet Mon Équipe pour voir le résultat
     }
-
-    const scoredFactions = allFactions.map(faction => {
-      const scores = Object.values(matrices[faction] || {}) as number[];
-      const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-      return { faction, avg };
-    }).sort((a, b) => b.avg - a.avg);
-
-    const topFaction = scoredFactions[0]?.faction || "Space Marines";
-    const sampleNames = ["Champion 1", "Champion 2", "Champion 3", "Champion 4", "Champion 5"];
-
-    const optimizedPlayers: Player[] = sampleNames.map((name) => ({
-      id: crypto.randomUUID(),
-      name: `${name} (${topFaction})`,
-      faction: topFaction,
-      disposition: 'Balanced',
-      tablePreferences: {}
-    }));
-
-    store.setMyTeam({
-      ...myTeam,
-      name: `Meta Dream Team (${topFaction})`,
-      players: optimizedPlayers,
-      size: optimizedPlayers.length
-    });
-
-    alert(`"Mon Équipe" optimisée générée avec succès (${topFaction}) !`);
   };
 
   const currentTeamToDisplay = activeTab === 'myTeam' ? myTeam : opponentTeam;
@@ -183,19 +96,17 @@ export const TeamManager: React.FC = () => {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       
-      {/* HEADER ET BASCULE D'ÉQUIPE */}
       <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2 text-white">
             <Users className="w-6 h-6 text-sky-400" />
-            Gestionnaire des Rosters (Équipes)
+            Gestionnaire des Rosters
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Gérez votre équipe ou l'équipe adverse active pour les phases de pairing.
+            Gérez les équipes pour les phases de pairing.
           </p>
         </div>
 
-        {/* Boutons de sélection d'affichage */}
         <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
           <button 
             onClick={() => setActiveTab('myTeam')}
@@ -209,24 +120,20 @@ export const TeamManager: React.FC = () => {
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition ${activeTab === 'opponentTeam' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             <Users className="w-4 h-4 text-rose-300" />
-            Équipe Adverse Active ({opponentTeam.players?.length || 0})
+            Équipe Adverse ({opponentTeam.players?.length || 0})
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* COLONNE DE GAUCHE : IMPORT BRUT, GÉNÉRATION AUTO & AJOUT MANUEL */}
         <div className="space-y-6 lg:col-span-1">
           
-          {/* Bloc de Génération Automatique */}
+          {/* BLOC GÉNÉRATION AUTO */}
           <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg space-y-3">
             <h3 className="text-md font-bold text-white flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-amber-400" />
               Génération Automatique
             </h3>
-            <p className="text-xs text-slate-400">Générez instantanément des équipes prêtes à l'emploi.</p>
-
             <div className="space-y-2 pt-1">
               <button 
                 onClick={handleGenerateRandomOpponent}
@@ -238,114 +145,94 @@ export const TeamManager: React.FC = () => {
                 onClick={handleGenerateMetaTeam}
                 className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg shadow transition flex items-center justify-center gap-2"
               >
-                <Sparkles className="w-4 h-4" /> Générer Mon Équipe (Optimisée Meta)
+                <Sparkles className="w-4 h-4" /> Générer Mon Équipe (Meta)
               </button>
             </div>
           </div>
 
-          {/* Bloc d'import brut avec choix de la cible */}
+          {/* BLOC IMPORT BRUT */}
           <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg space-y-4">
             <h3 className="text-md font-bold text-white flex items-center gap-2">
               <Upload className="w-5 h-5 text-sky-400" />
               Import Brut de Roster
             </h3>
-            <p className="text-xs text-slate-400">
-              Format requis (1 joueur par ligne) : <code className="text-sky-300">Nom - Faction</code>
-            </p>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300">Importer pour :</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setImportTarget('myTeam')}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold border transition ${importTarget === 'myTeam' ? 'bg-sky-600/30 border-sky-500 text-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
-                >
-                  Mon Équipe
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportTarget('opponentTeam')}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold border transition ${importTarget === 'opponentTeam' ? 'bg-rose-600/30 border-rose-500 text-rose-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
-                >
-                  Équipe Adverse
-                </button>
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setImportTarget('myTeam')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold border transition ${importTarget === 'myTeam' ? 'bg-sky-600/30 border-sky-500 text-sky-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+              >
+                Mon Équipe
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportTarget('opponentTeam')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold border transition ${importTarget === 'opponentTeam' ? 'bg-rose-600/30 border-rose-500 text-rose-300' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+              >
+                Équipe Adverse
+              </button>
             </div>
-
             <textarea 
-              rows={5}
-              placeholder="Ex: Jean Dupont - Space Marines&#10;Marc Leroy - Aeldari"
+              rows={4}
+              placeholder="Ex: Jean - Space Marines&#10;Marc - Aeldari"
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-3 text-xs outline-none focus:border-sky-500 font-mono"
             />
-
             <button 
               onClick={handleRawImport}
               className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-lg shadow transition"
             >
-              Lancer l'import brut
+              Importer
             </button>
           </div>
 
-          {/* Bloc d'ajout manuel */}
+          {/* BLOC AJOUT MANUEL */}
           <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg space-y-4">
             <h3 className="text-md font-bold text-white flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-emerald-400" />
-              Ajouter un joueur ({activeTab === 'myTeam' ? 'Mon Équipe' : 'Équipe Adverse'})
+              Ajout Manuel
             </h3>
-
             <form onSubmit={handleAddPlayerManually} className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Nom du joueur</label>
-                <input 
-                  type="text"
-                  placeholder="Ex: Thomas"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-xs outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Faction</label>
-                <input 
-                  type="text"
-                  placeholder="Ex: Tyranids"
-                  value={newFaction}
-                  onChange={(e) => setNewFaction(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-xs outline-none focus:border-sky-500"
-                />
-              </div>
-
+              <input 
+                type="text"
+                placeholder="Nom du joueur"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-xs outline-none focus:border-sky-500"
+              />
+              <input 
+                type="text"
+                placeholder="Faction"
+                value={newFaction}
+                onChange={(e) => setNewFaction(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg p-2.5 text-xs outline-none focus:border-sky-500"
+              />
               <button 
                 type="submit"
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow transition"
               >
-                Ajouter le joueur
+                Ajouter
               </button>
             </form>
           </div>
 
         </div>
 
-        {/* COLONNE DE DROITE : LISTE DES JOUEURS DE L'ÉQUIPE SÉLECTIONNÉE */}
+        {/* LISTE DES JOUEURS */}
         <div className="lg:col-span-2 bg-slate-900 border border-slate-700 p-6 rounded-xl shadow-lg space-y-4">
           <div className="flex justify-between items-center border-b border-slate-800 pb-3">
             <div>
               <h3 className="text-lg font-bold text-white">
-                Roster de : <span className={activeTab === 'myTeam' ? 'text-sky-400' : 'text-rose-400'}>{currentTeamToDisplay.name}</span>
+                Roster : <span className={activeTab === 'myTeam' ? 'text-sky-400' : 'text-rose-400'}>{currentTeamToDisplay.name}</span>
               </h3>
-              <p className="text-xs text-slate-400">Total : {currentTeamToDisplay.players?.length || 0} joueurs</p>
             </div>
           </div>
 
           {!currentTeamToDisplay.players || currentTeamToDisplay.players.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 space-y-2">
-              <Users className="w-10 h-10 mx-auto opacity-40" />
-              <p className="text-sm">Aucun joueur enregistré dans cette équipe pour le moment.</p>
-              <p className="text-xs">Utilisez l'import brut, l'ajout manuel ou la génération automatique à gauche.</p>
+            <div className="p-12 text-center text-slate-500">
+              <Users className="w-10 h-10 mx-auto opacity-40 mb-2" />
+              <p className="text-sm">Aucun joueur enregistré.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -353,9 +240,9 @@ export const TeamManager: React.FC = () => {
                 <thead className="bg-slate-900 text-slate-300 text-xs uppercase">
                   <tr>
                     <th className="p-3">#</th>
-                    <th className="p-3">Nom du Joueur</th>
+                    <th className="p-3">Nom</th>
                     <th className="p-3">Faction</th>
-                    <th className="p-3 text-right">Actions</th>
+                    <th className="p-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -368,7 +255,6 @@ export const TeamManager: React.FC = () => {
                         <button 
                           onClick={() => handleDeletePlayer(player.id)}
                           className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-                          title="Supprimer ce joueur"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
