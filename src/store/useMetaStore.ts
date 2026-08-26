@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Team, Player, MatchupMatrices, ScoreRating } from '../types';
-import { BASELINE_V11_WINRATES, generateWTCMatrix, fetchLatestTournamentMeta } from '../services/metaFetcher';
+import { BASELINE_V11_WINRATES, generateWTCMatrix, fetchMetaFromGemini } from '../services/metaFetcher';
 
 export interface MetaState {
   myTeam: Team;
@@ -12,118 +12,35 @@ export interface MetaState {
   isSyncing: boolean;
   lastUpdated: string;
   dataSource: string;
+  geminiApiKey: string; // NOUVEAU : Stockage de la clé
 
-  setMyTeam: (team: Team) => void;
-  setOpponentTeam: (team: Team) => void;
-  addMyPlayer: (player: Player) => void;
-  updateMyPlayer: (id: string, updated: Partial<Player>) => void;
-  deleteMyPlayer: (id: string) => void;
-  addOpponentPlayer: (player: Player) => void;
-  updateOpponentPlayer: (id: string, updated: Partial<Player>) => void;
-  deleteOpponentPlayer: (id: string) => void;
-
+  setGeminiApiKey: (key: string) => void;
+  // ... (Garder vos fonctions de roster setMyTeam, addMyPlayer, etc. comme elles sont)
+  
   refreshMetaFromAI: () => Promise<void>;
   updateMatrixCell: (factionA: string, factionB: string, value: number) => void;
-  updateMatrices: (matrices: MatchupMatrices) => void;
   resetToDefaults: () => void;
   loadInitialData: () => void;
 }
 
-const DEFAULT_MY_TEAM: Team = {
-  id: 'my-team',
-  name: 'Mon Équipe',
-  size: 8,
-  players: [
-    { id: 'p1', name: 'Capitaine', faction: 'Space Marines', disposition: 'Take & Hold', tablePreferences: {} },
-    { id: 'p2', name: 'Joueur 2', faction: 'Orks', disposition: 'Purge the Foe', tablePreferences: {} },
-    { id: 'p3', name: 'Joueur 3', faction: 'Aeldari', disposition: 'Reconnaissance', tablePreferences: {} },
-    { id: 'p4', name: 'Joueur 4', faction: 'Necrons', disposition: 'Take & Hold', tablePreferences: {} }
-  ]
-};
-
-const DEFAULT_OPP_TEAM: Team = {
-  id: 'opp-team',
-  name: 'Équipe Adverse',
-  size: 8,
-  players: [
-    { id: 'o1', name: 'Adversaire 1', faction: 'Chaos Daemons', disposition: 'Disruption', tablePreferences: {} },
-    { id: 'o2', name: 'Adversaire 2', faction: 'Thousand Sons', disposition: 'Priority Asset', tablePreferences: {} },
-    { id: 'o3', name: 'Adversaire 3', faction: 'T\'au Empire', disposition: 'Take & Hold', tablePreferences: {} },
-    { id: 'o4', name: 'Adversaire 4', faction: 'World Eaters', disposition: 'Purge the Foe', tablePreferences: {} }
-  ]
-};
-
 const defaultFactionMatrix = generateWTCMatrix(BASELINE_V11_WINRATES) as Record<string, Record<string, ScoreRating>>;
-
-const initialMatrices: MatchupMatrices = {
-  factionVsFaction: defaultFactionMatrix,
-  dispositionVsDisposition: {
-    'Purge the Foe': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
-    'Reconnaissance': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
-    'Take & Hold': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
-    'Disruption': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
-    'Priority Asset': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 }
-  },
-  isManuallyOverridden: false
-};
+const initialMatrices: MatchupMatrices = { factionVsFaction: defaultFactionMatrix, dispositionVsDisposition: {}, isManuallyOverridden: false };
 
 export const useMetaStore = create<MetaState>()(
   persist(
     (set, get) => ({
-      myTeam: DEFAULT_MY_TEAM,
-      opponentTeam: DEFAULT_OPP_TEAM,
+      myTeam: { id: 't1', name: 'Mon Équipe', size: 8, players: [] }, // Remettez vos joueurs par défaut ici si besoin
+      opponentTeam: { id: 't2', name: 'Équipe Adverse', size: 8, players: [] },
       winrates: BASELINE_V11_WINRATES,
       matrices: initialMatrices,
       isSyncing: false,
-      lastUpdated: 'Août 2026 (Data V11)',
-      dataSource: 'Méta W40k V11 Officiel',
+      lastUpdated: 'Mode hors-ligne (Data V11)',
+      dataSource: 'Base de données locale par défaut',
+      geminiApiKey: '', 
 
-      setMyTeam: (team) => set({ myTeam: team }),
-      setOpponentTeam: (team) => set({ opponentTeam: team }),
+      setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
-      addMyPlayer: (player) =>
-        set((state) => ({
-          myTeam: { ...state.myTeam, players: [...(state.myTeam?.players || []), player] }
-        })),
-
-      updateMyPlayer: (id, updated) =>
-        set((state) => ({
-          myTeam: {
-            ...state.myTeam,
-            players: (state.myTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
-          }
-        })),
-
-      deleteMyPlayer: (id) =>
-        set((state) => ({
-          myTeam: {
-            ...state.myTeam,
-            players: (state.myTeam?.players || []).filter((p) => p.id !== id)
-          }
-        })),
-
-      addOpponentPlayer: (player) =>
-        set((state) => ({
-          opponentTeam: { ...state.opponentTeam, players: [...(state.opponentTeam?.players || []), player] }
-        })),
-
-      updateOpponentPlayer: (id, updated) =>
-        set((state) => ({
-          opponentTeam: {
-            ...state.opponentTeam,
-            players: (state.opponentTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
-          }
-        })),
-
-      deleteOpponentPlayer: (id) =>
-        set((state) => ({
-          opponentTeam: {
-            ...state.opponentTeam,
-            players: (state.opponentTeam?.players || []).filter((p) => p.id !== id)
-          }
-        })),
-
-      updateMatrices: (matrices) => set({ matrices }),
+      // ... (Garder vos autres fonctions) ...
 
       updateMatrixCell: (fA, fB, value) => {
         const currentMatrices = get().matrices;
@@ -134,19 +51,21 @@ export const useMetaStore = create<MetaState>()(
           [fB]: { ...(currentFxF[fB] || {}), [fA]: -value as ScoreRating }
         };
         set({
-          matrices: {
-            ...currentMatrices,
-            factionVsFaction: updatedFxF,
-            isManuallyOverridden: true
-          },
-          dataSource: 'Modifié manuellement (V11)'
+          matrices: { ...currentMatrices, factionVsFaction: updatedFxF, isManuallyOverridden: true },
+          dataSource: 'Modifié manuellement'
         });
       },
 
       refreshMetaFromAI: async () => {
+        const key = get().geminiApiKey;
+        if (!key) {
+          alert("Veuillez d'abord configurer votre clé API Gemini.");
+          return;
+        }
+
         set({ isSyncing: true });
         try {
-          const freshData = await fetchLatestTournamentMeta();
+          const freshData = await fetchMetaFromGemini(key);
           set({
             winrates: freshData.winrates,
             matrices: {
@@ -158,7 +77,9 @@ export const useMetaStore = create<MetaState>()(
             dataSource: freshData.source,
             isSyncing: false
           });
-        } catch {
+        } catch (error) {
+          console.error(error);
+          alert("Erreur lors de la récupération via Gemini. Vérifiez votre clé API.");
           set({ isSyncing: false });
         }
       },
@@ -167,15 +88,15 @@ export const useMetaStore = create<MetaState>()(
         set({
           winrates: BASELINE_V11_WINRATES,
           matrices: initialMatrices,
-          lastUpdated: 'Réinitialisé aux données V11',
-          dataSource: 'Méta W40k V11 Officiel'
+          lastUpdated: 'Réinitialisé aux données V11 hors-ligne',
+          dataSource: 'Base locale'
         });
       },
 
       loadInitialData: () => {}
     }),
     {
-      name: 'wtc-meta-storage-v11-final'
+      name: 'wtc-meta-storage-gemini' // Changement de clé pour valider l'update
     }
   )
 );
