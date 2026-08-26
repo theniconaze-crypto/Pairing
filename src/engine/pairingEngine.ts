@@ -1,20 +1,18 @@
-import { Player, MatchupMatrices, ScoreRating, StrategyOption, DispositionArchetype } from '../types';
+import { Player, MatchupMatrices, StrategyOption } from '../types';
 
 /**
  * Convertit un score brut (-3 a +3) en points WTC (0 a 20)
  */
 export function ratingToWTC(score: number): number {
   const clamped = Math.max(-3, Math.min(3, score));
-  // Interpolation lineaire basée sur les paliers officiels WTC :
-  // +3 -> 18 | +2 -> 15 | +1 -> 12 | 0 -> 10 | -1 -> 8 | -2 -> 5 | -3 -> 2
   if (clamped >= 0) {
-    if (clamped >= 2) return 15 + (clamped - 2) * 3; // +2 a +3 -> 15 a 18
-    if (clamped >= 1) return 12 + (clamped - 1) * 3; // +1 a +2 -> 12 a 15
-    return 10 + clamped * 2;                         //  0 a +1 -> 10 a 12
+    if (clamped >= 2) return 15 + (clamped - 2) * 3;
+    if (clamped >= 1) return 12 + (clamped - 1) * 3;
+    return 10 + clamped * 2;
   } else {
-    if (clamped <= -2) return 5 + (clamped + 2) * 3;  // -3 a -2 -> 2 a 5
-    if (clamped <= -1) return 8 + (clamped + 1) * 3;  // -2 a -1 -> 5 a 8
-    return 10 + clamped * 2;                          // -1 a  0 -> 8 a 10
+    if (clamped <= -2) return 5 + (clamped + 2) * 3;
+    if (clamped <= -1) return 8 + (clamped + 1) * 3;
+    return 10 + clamped * 2;
   }
 }
 
@@ -38,14 +36,12 @@ export function calculateMatchupScore(
 }
 
 /**
- * Implémentation de l'Algorithme Hongrois (Kuhn-Munkres) - O(N^3)
- * Résout le problème d'affectation maximale sur une matrice de couts.
+ * Algorithme Hongrois (Kuhn-Munkres) - O(N^3)
  */
 export function solveHungarian(costMatrix: number[][]): number[] {
   const n = costMatrix.length;
   if (n === 0) return [];
 
-  // Transformer le problème de maximisation en minimisation
   let maxVal = -Infinity;
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
@@ -103,7 +99,7 @@ export function solveHungarian(costMatrix: number[][]): number[] {
       const j1 = way[j0];
       p[j0] = p[j1];
       j0 = j1;
-    } me while (j0 !== 0);
+    } while (j0 !== 0);
   }
 
   const result = new Array(n).fill(-1);
@@ -134,7 +130,6 @@ export function getMinimaxRecommendation(
   let bestMapId = maps[0];
   let maxGuaranteedScore = -Infinity;
 
-  // L'équipe qui choisit l'attaquant cherche à MAXIMISER la valeur garantie
   for (const attId of attackerIds) {
     const attacker = oppPlayers.find((p) => p.id === attId);
     if (!attacker) continue;
@@ -142,7 +137,6 @@ export function getMinimaxRecommendation(
     for (const mapId of maps) {
       const { scoreWTC } = calculateMatchupScore(defender, attacker, mapId, matrices);
 
-      // Évaluation des choix sous-jacents restants via l'algorithme Hongrois
       const remMy = myPlayers.filter((p) => p.id !== defenderId);
       const remOpp = oppPlayers.filter((p) => p.id !== attId);
       const remMaps = maps.filter((m) => m !== mapId);
