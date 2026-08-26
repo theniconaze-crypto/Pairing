@@ -1,3 +1,5 @@
+// src/services/metaFetcher.ts
+
 export interface MetaFetchResult {
   lastUpdated: string;
   source: string;
@@ -5,41 +7,23 @@ export interface MetaFetchResult {
   matrix: Record<string, Record<string, number>>;
 }
 
-// NOUVEAU META V11 (Août 2026) - Données épurées des reliquats V10
+// On garde une base locale (fallback) uniquement si l'utilisateur n'a pas de clé API ou s'il y a une erreur réseau
 export const BASELINE_V11_WINRATES: Record<string, number> = {
-  "Chaos Daemons": 64.8, // V11 Dominance
-  "Aeldari": 54.2,
-  "Thousand Sons": 54.1,
-  "Black Templars": 53.5,
-  "Necrons": 52.8,
-  "Adeptus Custodes": 52.0,
-  "World Eaters": 51.5,
-  "Drukhari": 51.2,
-  "Chaos Space Marines": 50.8,
-  "Imperial Knights": 50.5,
-  "Orks": 50.1,
-  "Blood Angels": 49.8,
-  "Adepta Sororitas": 49.5,
-  "T'au Empire": 49.2,
-  "Astra Militarum": 48.9,
-  "Ultramarines": 48.5,
-  "Leagues of Votann": 48.0,
-  "Chaos Knights": 47.6,
-  "Dark Angels": 47.2,
-  "Space Marines": 46.8,
-  "Death Guard": 46.5,
-  "Tyranids": 45.9,
-  "Genestealer Cults": 45.2,
-  "Space Wolves": 44.5,
-  "Grey Knights": 43.8,
-  "Adeptus Mechanicus": 42.1
+  "Chaos Daemons": 64.8, "Aeldari": 54.2, "Thousand Sons": 54.1, "Black Templars": 53.5,
+  "Necrons": 52.8, "Adeptus Custodes": 52.0, "World Eaters": 51.5, "Drukhari": 51.2,
+  "Chaos Space Marines": 50.8, "Imperial Knights": 50.5, "Orks": 50.1, "Blood Angels": 49.8,
+  "Adepta Sororitas": 49.5, "T'au Empire": 49.2, "Astra Militarum": 48.9, "Ultramarines": 48.5,
+  "Leagues of Votann": 48.0, "Chaos Knights": 47.6, "Dark Angels": 47.2, "Space Marines": 46.8,
+  "Death Guard": 46.5, "Tyranids": 45.9, "Genestealer Cults": 45.2, "Space Wolves": 44.5,
+  "Grey Knights": 43.8, "Adeptus Mechanicus": 42.1
 };
+
+const FACTION_LIST = Object.keys(BASELINE_V11_WINRATES);
 
 export function convertWinrateDiffToWTC(wrA: number, wrB: number, factionA: string, factionB: string): number {
   if (factionA === factionB) return 0;
   let diff = wrA - wrB;
 
-  // Archétypes V11
   if (factionA.includes("Knights") && (factionB === "Thousand Sons" || factionB === "Aeldari")) diff -= 8;
   if (factionB.includes("Knights") && (factionA === "Thousand Sons" || factionA === "Aeldari")) diff += 8;
 
@@ -53,31 +37,63 @@ export function convertWinrateDiffToWTC(wrA: number, wrB: number, factionA: stri
 }
 
 export function generateWTCMatrix(winrates: Record<string, number>): Record<string, Record<string, number>> {
-  const factions = Object.keys(winrates);
   const matrix: Record<string, Record<string, number>> = {};
-
-  factions.forEach((f1) => {
+  FACTION_LIST.forEach((f1) => {
     matrix[f1] = {};
-    factions.forEach((f2) => {
+    FACTION_LIST.forEach((f2) => {
       const wr1 = winrates[f1] ?? 50;
       const wr2 = winrates[f2] ?? 50;
       matrix[f1][f2] = convertWinrateDiffToWTC(wr1, wr2, f1, f2);
     });
   });
-
   return matrix;
 }
 
-export async function fetchLatestTournamentMeta(): Promise<MetaFetchResult> {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+// LA NOUVELLE FONCTION GEMINI
+export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResult> {
+  if (!apiKey) throw new Error("Clé API Gemini manquante.");
 
-  // Fallback V11 exclusif (Si l'API n'a pas de filtre "V11 Only", on priorise nos données pures)
-  // On simule l'appel mais on s'assure d'avoir la V11
+  const prompt = `Tu es un expert en statistiques de tournois Warhammer 40,000 (WTC).
+  Fournis les taux de victoires (winrates) estimés les plus récents pour la V11.
+  Tu DOIS retourner les données UNIQUEMENT sous la forme d'un objet JSON strict.
+  Les clés doivent être EXACTEMENT les noms de factions suivants en anglais, et les valeurs doivent être des nombres (pourcentages de 0 à 100) :
+  ${JSON.stringify(FACTION_LIST)}
+  Format attendu : {"winrates": {"Faction Name": 50.5, ...}}`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      // On force Gemini à ne répondre QUE du JSON pur (sans markdown autour)
+      generationConfig: { response_mime_type: "application/json" } 
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("Erreur de connexion à l'API Gemini");
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates[0].content.parts[0].text;
+  
+  // Analyse de la réponse JSON de l'IA
+  const aiResult = JSON.parse(rawText);
+  const aiWinrates = aiResult.winrates;
+
+  // Validation : on s'assure que toutes nos factions ont une valeur (fallback à 50% si l'IA en a oublié une)
+  const safeWinrates: Record<string, number> = {};
+  FACTION_LIST.forEach(faction => {
+    safeWinrates[faction] = aiWinrates[faction] !== undefined ? Number(aiWinrates[faction]) : 50.0;
+  });
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
   return {
-    lastUpdated: dateStr + ` (Data V11)`,
-    source: "Tournois V11 (Listhammer / BCP)",
-    winrates: BASELINE_V11_WINRATES,
-    matrix: generateWTCMatrix(BASELINE_V11_WINRATES)
+    lastUpdated: dateStr,
+    source: "Généré dynamiquement par Google Gemini AI",
+    winrates: safeWinrates,
+    matrix: generateWTCMatrix(safeWinrates)
   };
 }
