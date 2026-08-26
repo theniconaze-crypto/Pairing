@@ -34,12 +34,56 @@ export const TeamManager: React.FC = () => {
     };
 
     if (activeTab === 'myTeam') {
-      store.addMyPlayer(newPlayer);
+      if (typeof store.addMyPlayer === 'function') {
+        store.addMyPlayer(newPlayer);
+      } else if (typeof store.setMyTeam === 'function') {
+        const currentPlayers = myTeam.players || [];
+        store.setMyTeam({
+          ...myTeam,
+          players: [...currentPlayers, newPlayer],
+          size: currentPlayers.length + 1
+        });
+      }
     } else {
-      store.addOpponentPlayer(newPlayer);
+      if (typeof store.addOpponentPlayer === 'function') {
+        store.addOpponentPlayer(newPlayer);
+      } else if (typeof store.setOpponentTeam === 'function') {
+        const currentPlayers = opponentTeam.players || [];
+        store.setOpponentTeam({
+          ...opponentTeam,
+          players: [...currentPlayers, newPlayer],
+          size: currentPlayers.length + 1
+        });
+      }
     }
 
     setNewName('');
+  };
+
+  const handleDeletePlayer = (playerId: string) => {
+    if (activeTab === 'myTeam') {
+      if (typeof store.deleteMyPlayer === 'function') {
+        store.deleteMyPlayer(playerId);
+      } else if (typeof store.setMyTeam === 'function') {
+        const updatedPlayers = (myTeam.players || []).filter(p => p.id !== playerId);
+        store.setMyTeam({
+          ...myTeam,
+          players: updatedPlayers,
+          size: updatedPlayers.length
+        });
+      }
+    } else {
+      if (typeof store.deleteOpponentPlayer === 'function') {
+        store.deleteOpponentPlayer(playerId);
+      } else if (typeof store.setOpponentTeam === 'function') {
+        const updatedPlayers = (opponentTeam.players || []).filter(p => p.id !== playerId);
+        store.setOpponentTeam({
+          ...opponentTeam,
+          players: updatedPlayers,
+          size: updatedPlayers.length
+        });
+      }
+    }
   };
 
   const handleRawImport = () => {
@@ -81,7 +125,6 @@ export const TeamManager: React.FC = () => {
     const sampleNames = ["Alex", "Thomas", "Nicolas", "Julien", "David", "Maxime", "Lucas", "Romain", "Antoine", "Kévin"];
     const sampleFactions = ["Space Marines", "Aeldari", "Orks", "Tyranids", "Necrons", "World Eaters", "Tau Empire", "Astra Militarum", "Death Guard", "Drukhari"];
     
-    // Génère une équipe de 5 à 8 joueurs aléatoires
     const teamSize = 5;
     const players: Player[] = Array.from({ length: teamSize }, (_, i) => ({
       id: crypto.randomUUID(),
@@ -108,7 +151,6 @@ export const TeamManager: React.FC = () => {
       return;
     }
 
-    // Calcule la meilleure faction basée sur les moyennes du tableau
     const scoredFactions = allFactions.map(faction => {
       const scores = Object.values(matrices[faction] || {}) as number[];
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
@@ -118,7 +160,7 @@ export const TeamManager: React.FC = () => {
     const topFaction = scoredFactions[0]?.faction || "Space Marines";
     const sampleNames = ["Champion 1", "Champion 2", "Champion 3", "Champion 4", "Champion 5"];
 
-    const optimizedPlayers: Player[] = sampleNames.map((name, i) => ({
+    const optimizedPlayers: Player[] = sampleNames.map((name) => ({
       id: crypto.randomUUID(),
       name: `${name} (${topFaction})`,
       faction: topFaction,
@@ -324,13 +366,7 @@ export const TeamManager: React.FC = () => {
                       <td className="p-3 text-sky-400">{player.faction}</td>
                       <td className="p-3 text-right">
                         <button 
-                          onClick={() => {
-                            if (activeTab === 'myTeam') {
-                              store.deleteMyPlayer(player.id);
-                            } else {
-                              store.deleteOpponentPlayer(player.id);
-                            }
-                          }}
+                          onClick={() => handleDeletePlayer(player.id)}
                           className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
                           title="Supprimer ce joueur"
                         >
