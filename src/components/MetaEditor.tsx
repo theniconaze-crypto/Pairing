@@ -109,13 +109,11 @@ Inclus les factions suivantes en lignes et colonnes : ${JSON.stringify(factionsL
       const data = await response.json();
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-      // 🛡️ NETTOYAGE ROBUSTE DU JSON (Supprime les balises markdown ```json et ``` si présentes)
       let cleanText = rawText.trim();
       cleanText = cleanText.replace(/^```json\s*/i, '');
       cleanText = cleanText.replace(/^```\s*/i, '');
       cleanText = cleanText.replace(/\s*```$/i, '');
 
-      // Extraction du premier '{' au dernier '}'
       const firstBrace = cleanText.indexOf('{');
       const lastBrace = cleanText.lastIndexOf('}');
 
@@ -127,7 +125,6 @@ Inclus les factions suivantes en lignes et colonnes : ${JSON.stringify(factionsL
       const parsed = JSON.parse(jsonString);
       const newFactionVsFaction = parsed.factionVsFaction || {};
 
-      // Construction sécurisée de la matrice finale
       const cleanedMatrix: Record<string, Record<string, number>> = {};
       factionsList.forEach((att) => {
         cleanedMatrix[att] = {};
