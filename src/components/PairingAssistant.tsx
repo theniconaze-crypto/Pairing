@@ -1,258 +1,351 @@
-import React, { useState } from 'react';
-import { Shield, Swords, Sparkles, CheckCircle2, ChevronRight, RotateCcw } from 'lucide-react';
-import { Player, MatchupMatrices, StrategyOption, PairedMatchup } from '../types';
-import { getDefenderRecommendation, getMinimaxRecommendation, calculateMatchupScore, solveHungarian } from '../engine/pairingEngine';
+// src/components/PairingAssistant.tsx
+import React, { useState, useMemo } from 'react';
+import { Player, MatchupMatrices } from '../types';
+import { Shield, Target, Swords, Trash2, CheckCircle2 } from 'lucide-react';
 
-interface PairingAssistantProps {
+interface Props {
   myPlayers: Player[];
   oppPlayers: Player[];
-  availableMaps: string[];
   matrices: MatchupMatrices;
+  availableMaps?: string[];
 }
 
-export const PairingAssistant: React.FC<PairingAssistantProps> = ({
-  myPlayers,
-  oppPlayers,
-  availableMaps,
-  matrices
-}) => {
-  const [strategy, setStrategy] = useState<StrategyOption>('MAX_SCORE');
-  const [pairings, setPairings] = useState<PairedMatchup[]>([]);
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [turnState, setTurnState] = useState<'SELECT_DEFENDER' | 'SELECT_ATTACKERS' | 'FINAL_SOLVE'>('SELECT_DEFENDER');
+export const PairingAssistant: React.FC<Props> = ({ myPlayers, oppPlayers, matrices }) => {
+  // --- ÉTAT GLOBAL DES MATCHS ---
+  const [pairings, setPairings] = useState<Array<{ id: string, myPlayer: Player, oppPlayer: Player }>>([]);
 
-  // Pools de joueurs et maps disponibles
-  const pairedMyIds = pairings.map((p) => p.myPlayerId);
-  const pairedOppIds = pairings.map((p) => p.oppPlayerId);
-  const pairedMapIds = pairings.map((p) => p.mapId);
+  // --- ÉTAPE : L'ADVERSAIRE POSE UN DÉFENSEUR ---
+  const [oppDefId, setOppDefId] = useState<string>('');
+  const [myAttackersIds, setMyAttackersIds] = useState<string[]>([]);
+  const [chosenMyAttackerId, setChosenMyAttackerId] = useState<string>('');
 
-  const availableMy = myPlayers.filter((p) => !pairedMyIds.includes(p.id));
-  const availableOpp = oppPlayers.filter((p) => !pairedOppIds.includes(p.id));
-  const remainingMaps = availableMaps.filter((m) => !pairedMapIds.includes(m));
+  // --- ÉTAPE : NOUS POSONS UN DÉFENSEUR ---
+  const [myDefId, setMyDefId] = useState<string>('');
+  const [oppAttackersIds, setOppAttackersIds] = useState<string[]>([]);
+  const [chosenOppAttackerId, setChosenOppAttackerId] = useState<string>('');
 
-  // Sélection en cours
-  const [selectedDefenderId, setSelectedDefenderId] = useState<string>('');
-  const [selectedAttackerIds, setSelectedAttackerIds] = useState<string[]>([]);
+  // Filtrer les joueurs déjà placés dans un match
+  const pairedMyIds = new Set(pairings.map(p => p.myPlayer.id));
+  const pairedOppIds = new Set(pairings.map(p => p.oppPlayer.id));
 
-  // Recommandation Minimax Défenseur
-  const defenderRecs = getDefenderRecommendation(availableMy, availableOpp, remainingMaps, matrices, strategy);
+  const availableMyPlayers = myPlayers.filter(p => !pairedMyIds.has(p.id));
+  const availableOppPlayers = oppPlayers.filter(p => !pairedOppIds.has(p.id));
 
-  // Recommandation Minimax Attaquant & Map
-  const attackerRec =
-    selectedDefenderId && selectedAttackerIds.length === 2
-      ? getMinimaxRecommendation(myPlayers, oppPlayers, remainingMaps, matrices, selectedDefenderId, selectedAttackerIds, strategy)
-      : null;
-
-  const handleAttackerToggle = (id: string) => {
-    if (selectedAttackerIds.includes(id)) {
-      setSelectedAttackerIds(selectedAttackerIds.filter((a) => a !== id));
-    } else if (selectedAttackerIds.length < 2) {
-      setSelectedAttackerIds([...selectedAttackerIds, id]);
-    }
+  // Outil de lecture du score
+  const getScore = (myFaction: string, oppFaction: string) => {
+    return matrices.factionVsFaction[myFaction]?.[oppFaction] ?? 0;
   };
 
-  const confirmPairingStep = (chosenAttackerId: string, mapId: string) => {
-    const defender = myPlayers.find((p) => p.id === selectedDefenderId)!;
-    const attacker = oppPlayers.find((p) => p.id === chosenAttackerId)!;
-    const { scoreWTC } = calculateMatchupScore(defender, attacker, mapId, matrices);
-
-    const newPairing: PairedMatchup = {
-      stepNumber: currentStep,
-      myPlayerId: selectedDefenderId,
-      oppPlayerId: chosenAttackerId,
-      mapId,
-      predictedScoreWTC: scoreWTC
-    };
-
-    setPairings([...pairings, newPairing]);
-    setSelectedDefenderId('');
-    setSelectedAttackerIds([]);
-
-    if (availableMy.length - 1 <= 2) {
-      setTurnState('FINAL_SOLVE');
-    } else {
-      setCurrentStep(currentStep + 1);
-      setTurnState('SELECT_DEFENDER');
-    }
+  const getScoreBadgeClass = (val: number) => {
+    if (val >= 2) return "bg-emerald-600 text-white border-emerald-500";
+    if (val === 1) return "bg-emerald-400 text-slate-900 border-emerald-300";
+    if (val === 0) return "bg-slate-300 text-slate-800 border-slate-200";
+    if (val === -1) return "bg-rose-300 text-slate-900 border-rose-200";
+    return "bg-rose-600 text-white border-rose-500";
   };
 
-  const executeHungarianFinalMatch = () => {
-    if (availableMy.length === 0) return;
-    const costMatrix = availableMy.map((myP) =>
-      availableOpp.map((oppP) => {
-        const scores = remainingMaps.map((m) => calculateMatchupScore(myP, oppP, m, matrices).scoreWTC);
-        return Math.max(...scores);
-      })
-    );
+  // --- LOGIQUE : Gérer leur Défenseur ---
+  const sortedAttackersForOppDef = useMemo(() => {
+    if (!oppDefId) return [];
+    const oppFaction = oppPlayers.find(p => p.id === oppDefId)?.faction || '';
+    return [...availableMyPlayers].sort((a, b) => getScore(b.faction, oppFaction) - getScore(a.faction, oppFaction));
+  }, [oppDefId, availableMyPlayers, oppPlayers, matrices]);
 
-    const matching = solveHungarian(costMatrix);
-    const finalPairings: PairedMatchup[] = matching.map((oppIdx, myIdx) => {
-      const myP = availableMy[myIdx];
-      const oppP = availableOpp[oppIdx];
-      const mapId = remainingMaps[myIdx] || remainingMaps[0];
-      const { scoreWTC } = calculateMatchupScore(myP, oppP, mapId, matrices);
-      return {
-        stepNumber: currentStep + myIdx,
-        myPlayerId: myP.id,
-        oppPlayerId: oppP.id,
-        mapId,
-        predictedScoreWTC: scoreWTC
-      };
+  const toggleMyAttacker = (id: string) => {
+    setMyAttackersIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length < 2) return [...prev, id];
+      return prev;
     });
-
-    setPairings([...pairings, ...finalPairings]);
-    setTurnState('FINAL_SOLVE');
   };
 
-  const resetPairings = () => {
-    setPairings([]);
-    setCurrentStep(1);
-    setSelectedDefenderId('');
-    setSelectedAttackerIds([]);
-    setTurnState('SELECT_DEFENDER');
+  const handleValidateLeurDefenseur = () => {
+    const myP = myPlayers.find(p => p.id === chosenMyAttackerId);
+    const oppP = oppPlayers.find(p => p.id === oppDefId);
+    if (myP && oppP) {
+      setPairings(prev => [...prev, { id: crypto.randomUUID(), myPlayer: myP, oppPlayer: oppP }]);
+      // Reset
+      setOppDefId('');
+      setMyAttackersIds([]);
+      setChosenMyAttackerId('');
+    }
   };
 
-  const totalPredictedScore = pairings.reduce((sum, p) => sum + p.predictedScoreWTC, 0);
+  // --- LOGIQUE : Gérer notre Défenseur ---
+  const sortedOppAttackersForMyDef = useMemo(() => {
+    if (!myDefId) return [];
+    const myFaction = myPlayers.find(p => p.id === myDefId)?.faction || '';
+    // On trie du meilleur pour NOUS au pire
+    return [...availableOppPlayers].sort((a, b) => getScore(myFaction, b.faction) - getScore(myFaction, a.faction));
+  }, [myDefId, availableOppPlayers, myPlayers, matrices]);
+
+  const toggleOppAttacker = (id: string) => {
+    setOppAttackersIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length < 2) return [...prev, id];
+      return prev;
+    });
+  };
+
+  const handleValidateMonDefenseur = () => {
+    const myP = myPlayers.find(p => p.id === myDefId);
+    const oppP = oppPlayers.find(p => p.id === chosenOppAttackerId);
+    if (myP && oppP) {
+      setPairings(prev => [...prev, { id: crypto.randomUUID(), myPlayer: myP, oppPlayer: oppP }]);
+      // Reset
+      setMyDefId('');
+      setOppAttackersIds([]);
+      setChosenOppAttackerId('');
+    }
+  };
+
+  const totalScore = pairings.reduce((acc, curr) => acc + getScore(curr.myPlayer.faction, curr.oppPlayer.faction), 0);
 
   return (
-    <div className="flex flex-col gap-4 p-4 bg-slate-950 text-slate-100 min-h-screen pb-28">
-      {/* Header Statut et Score Cumulé */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+    <div className="p-4 space-y-6 max-w-7xl mx-auto">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-md gap-4">
         <div>
-          <div className="text-[10px] text-slate-400 font-semibold uppercase">Étape {currentStep} sur 5</div>
-          <div className="text-xs font-bold text-sky-400">Score Prédictif Ronde : {totalPredictedScore} pts WTC</div>
+          <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+            <Swords className="w-6 h-6 text-sky-400" />
+            Assistant de Pairing (Séquence WTC)
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">Joueurs non pairés : <span className="font-bold text-sky-400">{availableMyPlayers.length}</span></p>
         </div>
-        <button
-          onClick={resetPairings}
-          className="p-2 bg-slate-800 rounded-xl text-slate-400 active:scale-95"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
       </div>
 
-      {/* Affichages des Appariements déjà validés */}
-      {pairings.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
-          <span className="text-xs font-bold text-slate-400 uppercase">Matchs Validés</span>
-          <div className="space-y-1.5">
-            {pairings.map((p, idx) => {
-              const myP = myPlayers.find((m) => m.id === p.myPlayerId);
-              const oppP = oppPlayers.find((o) => o.id === p.oppPlayerId);
-              return (
-                <div key={idx} className="flex items-center justify-between bg-slate-950 p-2 rounded-xl text-xs border border-slate-800/80">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sky-400">{myP?.name}</span>
-                    <span className="text-slate-500">vs</span>
-                    <span className="font-bold text-amber-400">{oppP?.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="text-slate-400">{p.mapId}</span>
-                    <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded font-bold">{p.predictedScoreWTC} pts</span>
-                  </div>
+      {/* PANNEAUX DE CONSTRUCTION DE MATCH */}
+      {availableMyPlayers.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* COLONNE 1 : L'Adversaire pose son Défenseur */}
+          <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl flex flex-col gap-4 shadow-lg">
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Shield className="w-5 h-5 text-rose-500" />
+              <h3 className="font-bold text-white text-lg">1. Ils posent un Défenseur</h3>
+            </div>
+            
+            <select 
+              value={oppDefId} 
+              onChange={e => { setOppDefId(e.target.value); setMyAttackersIds([]); setChosenMyAttackerId(''); }}
+              className="bg-slate-800 border border-slate-600 text-white rounded-lg p-3 outline-none focus:border-sky-500"
+            >
+              <option value="">-- Sélectionnez le défenseur adverse --</option>
+              {availableOppPlayers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.faction})</option>)}
+            </select>
+
+            {oppDefId && (
+              <div className="flex-1 flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
+                <p className="text-sm font-semibold text-sky-300 uppercase tracking-wide">Meilleurs attaquants recommandés (Cochez-en 2)</p>
+                <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-2">
+                  {sortedAttackersForOppDef.map(p => {
+                    const score = getScore(p.faction, oppPlayers.find(o => o.id === oppDefId)?.faction || '');
+                    const isSelected = myAttackersIds.includes(p.id);
+                    return (
+                      <div key={p.id} onClick={() => toggleMyAttacker(p.id)}
+                        className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${
+                          isSelected ? 'bg-sky-900/50 border-sky-400 shadow-sm' : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-slate-100">{p.name}</p>
+                          <p className="text-xs text-slate-400">{p.faction}</p>
+                        </div>
+                        <div className={`px-2 py-1 rounded text-xs font-bold border ${getScoreBadgeClass(score)}`}>
+                          {score > 0 ? `+${score}` : score}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Phase 1 : Recommandation & Choix du Défenseur */}
-      {turnState === 'SELECT_DEFENDER' && availableMy.length > 2 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sky-400 font-bold text-sm">
-            <Shield className="w-4 h-4" /> 1. Recommandation Défenseur à Poser
-          </div>
-
-          {defenderRecs.length > 0 && (
-            <div className="bg-emerald-950/40 border border-emerald-800/60 p-3 rounded-xl space-y-1">
-              <div className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" /> Poser idéalement : {defenderRecs[0].player.name}
               </div>
-              <div className="text-[11px] text-slate-300">
-                Score Min Garanti : <span className="font-bold text-white font-mono">{defenderRecs[0].expectedMinScore.toFixed(1)} pts</span>
-              </div>
-            </div>
-          )}
+            )}
 
-          <div className="grid grid-cols-2 gap-2 pt-2">
-            {availableMy.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setSelectedDefenderId(p.id);
-                  setTurnState('SELECT_ATTACKERS');
-                }}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  selectedDefenderId === p.id
-                    ? 'bg-sky-950 border-sky-500 text-white'
-                    : 'bg-slate-950 border-slate-800 text-slate-300'
-                }`}
-              >
-                <div className="font-bold text-xs">{p.name}</div>
-                <div className="text-[10px] text-sky-400">{p.faction}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Phase 2 : Révélation des 2 Attaquants et Choix Final */}
-      {turnState === 'SELECT_ATTACKERS' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-            <Swords className="w-4 h-4" /> 2. Révéler les 2 Attaquants Adverses
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {availableOpp.map((p) => {
-              const isSelected = selectedAttackerIds.includes(p.id);
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => handleAttackerToggle(p.id)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    isSelected
-                      ? 'bg-amber-950 border-amber-500 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
-                  }`}
+            {myAttackersIds.length === 2 && (
+              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mt-2 space-y-3 animate-in fade-in">
+                <p className="text-sm font-semibold text-slate-200">Lequel ont-ils choisi d'affronter ?</p>
+                <div className="flex gap-2">
+                  {myAttackersIds.map(id => {
+                    const p = myPlayers.find(x => x.id === id)!;
+                    return (
+                      <button key={id} onClick={() => setChosenMyAttackerId(id)}
+                        className={`flex-1 p-3 rounded-lg border text-sm font-bold transition-all ${
+                          chosenMyAttackerId === id ? 'bg-emerald-600 border-emerald-400 text-white shadow-md' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                <button disabled={!chosenMyAttackerId} onClick={handleValidateLeurDefenseur}
+                  className="w-full mt-2 py-3 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
                 >
-                  <div className="font-bold text-xs truncate">{p.name}</div>
-                  <div className="text-[10px] text-amber-400">{p.faction}</div>
+                  <CheckCircle2 className="w-5 h-5" />
+                  Valider le match
                 </button>
-              );
-            })}
+              </div>
+            )}
           </div>
 
-          {attackerRec && (
-            <div className="bg-emerald-950/60 border border-emerald-800 p-3 rounded-xl space-y-2">
-              <div className="text-xs font-bold text-emerald-300 flex items-center gap-1">
-                <Sparkles className="w-4 h-4" /> Option Optimale Recommandée :
-              </div>
-              <div className="text-xs text-slate-200">
-                Prendre <span className="font-bold text-white">{oppPlayers.find((p) => p.id === attackerRec.recommendedAttackerId)?.name}</span> sur <span className="font-bold text-white">{attackerRec.recommendedMapId}</span>
-              </div>
-              <button
-                onClick={() => confirmPairingStep(attackerRec.recommendedAttackerId, attackerRec.recommendedMapId)}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 font-bold text-xs rounded-lg flex items-center justify-center gap-1 active:scale-95 transition-all"
-              >
-                <CheckCircle2 className="w-4 h-4" /> Valider cette Recommandation
-              </button>
+          {/* COLONNE 2 : Nous posons un Défenseur */}
+          <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl flex flex-col gap-4 shadow-lg">
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Shield className="w-5 h-5 text-sky-400" />
+              <h3 className="font-bold text-white text-lg">2. Nous posons un Défenseur</h3>
             </div>
-          )}
+            
+            <select 
+              value={myDefId} 
+              onChange={e => { setMyDefId(e.target.value); setOppAttackersIds([]); setChosenOppAttackerId(''); }}
+              className="bg-slate-800 border border-slate-600 text-white rounded-lg p-3 outline-none focus:border-sky-500"
+            >
+              <option value="">-- Sélectionnez notre défenseur --</option>
+              {availableMyPlayers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.faction})</option>)}
+            </select>
+
+            {myDefId && (
+              <div className="flex-1 flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
+                <p className="text-sm font-semibold text-rose-300 uppercase tracking-wide">Leurs attaquants (Cochez les 2 ciblés)</p>
+                <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-2">
+                  {sortedOppAttackersForMyDef.map(p => {
+                    const score = getScore(myPlayers.find(o => o.id === myDefId)?.faction || '', p.faction);
+                    const isSelected = oppAttackersIds.includes(p.id);
+                    return (
+                      <div key={p.id} onClick={() => toggleOppAttacker(p.id)}
+                        className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${
+                          isSelected ? 'bg-rose-900/50 border-rose-400 shadow-sm' : 'bg-slate-800/80 border-slate-700 hover:border-slate-500'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-slate-100">{p.name}</p>
+                          <p className="text-xs text-slate-400">{p.faction}</p>
+                        </div>
+                        <div className={`px-2 py-1 rounded text-xs font-bold border ${getScoreBadgeClass(score)}`}>
+                          {score > 0 ? `+${score}` : score}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {oppAttackersIds.length === 2 && (
+              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mt-2 space-y-3 animate-in fade-in">
+                <p className="text-sm font-semibold text-slate-200">Lequel choisissez-vous d'affronter ?</p>
+                <div className="flex gap-2">
+                  {oppAttackersIds.map(id => {
+                    const p = oppPlayers.find(x => x.id === id)!;
+                    return (
+                      <button key={id} onClick={() => setChosenOppAttackerId(id)}
+                        className={`flex-1 p-3 rounded-lg border text-sm font-bold transition-all ${
+                          chosenOppAttackerId === id ? 'bg-emerald-600 border-emerald-400 text-white shadow-md' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                <button disabled={!chosenOppAttackerId} onClick={handleValidateMonDefenseur}
+                  className="w-full mt-2 py-3 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold rounded-lg flex items-center justify-center gap-2 transition-all"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  Valider le match
+                </button>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 
-      {/* Phase Finale : Kuhn-Munkres pour les 2 derniers joueurs */}
-      {availableMy.length <= 2 && availableMy.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center space-y-3">
-          <div className="text-xs font-bold text-sky-400">Fin de Draft : 2 Derniers Joueurs Restants</div>
-          <p className="text-[11px] text-slate-400">Exécuter l'Algorithme Hongrois pour maximiser l'affectation finale des tables.</p>
-          <button
-            onClick={executeHungarianFinalMatch}
-            className="w-full py-3 bg-sky-600 hover:bg-sky-500 font-bold text-xs rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+      {/* MATCH FINAL AUTOMATIQUE (Derniers joueurs restants) */}
+      {availableMyPlayers.length === 1 && availableOppPlayers.length === 1 && (
+        <div className="bg-emerald-900/30 border border-emerald-500 p-6 rounded-xl text-center space-y-5 shadow-lg">
+          <h3 className="text-xl font-bold text-emerald-400">Dernière Table Restante</h3>
+          <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
+            <div className="text-center md:text-right">
+              <p className="text-lg font-bold text-white">{availableMyPlayers[0].name}</p>
+              <p className="text-sm text-slate-400">{availableMyPlayers[0].faction}</p>
+            </div>
+            <span className="px-4 py-2 bg-slate-800 rounded-full font-black text-emerald-400 shadow-inner">VS</span>
+            <div className="text-center md:text-left">
+              <p className="text-lg font-bold text-white">{availableOppPlayers[0].name}</p>
+              <p className="text-sm text-slate-400">{availableOppPlayers[0].faction}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setPairings(prev => [...prev, { id: crypto.randomUUID(), myPlayer: availableMyPlayers[0], oppPlayer: availableOppPlayers[0] }])} 
+            className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-md transition-all"
           >
-            Calculer l'Optimisation Finale Hongroise <ChevronRight className="w-4 h-4" />
+            Générer le dernier match automatiquement
           </button>
+        </div>
+      )}
+
+      {/* LISTE DES MATCHS VALIDÉS */}
+      {pairings.length > 0 && (
+        <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg mt-8">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Target className="w-6 h-6 text-emerald-500" />
+              Matchs Confirmés ({pairings.length})
+            </h3>
+            <div className="px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-sm font-bold text-slate-200">
+              Différentiel Estimé : 
+              <span className={`ml-2 text-lg ${totalScore > 0 ? 'text-emerald-400' : totalScore < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                {totalScore > 0 ? `+${totalScore}` : totalScore}
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-700">
+            <table className="w-full text-left text-sm bg-slate-800">
+              <thead className="bg-slate-900 text-slate-300">
+                <tr>
+                  <th className="p-4 font-semibold w-1/3">Notre Équipe</th>
+                  <th className="p-4 font-semibold text-center w-1/6">Score WTC</th>
+                  <th className="p-4 font-semibold w-1/3">Équipe Adverse</th>
+                  <th className="p-4 text-right w-1/6">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {pairings.map(match => {
+                  const sc = getScore(match.myPlayer.faction, match.oppPlayer.faction);
+                  return (
+                    <tr key={match.id} className="text-slate-200 hover:bg-slate-800/80 transition-colors">
+                      <td className="p-4">
+                        <p className="font-bold text-[15px]">{match.myPlayer.name}</p>
+                        <p className="text-xs text-sky-400">{match.myPlayer.faction}</p>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`inline-block px-3 py-1.5 rounded-md text-xs font-black border shadow-sm ${getScoreBadgeClass(sc)}`}>
+                          {sc > 0 ? `+${sc}` : sc}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <p className="font-bold text-[15px]">{match.oppPlayer.name}</p>
+                        <p className="text-xs text-rose-400">{match.oppPlayer.faction}</p>
+                      </td>
+                      <td className="p-4 text-right">
+                        <button 
+                          onClick={() => setPairings(prev => prev.filter(p => p.id !== match.id))} 
+                          className="p-2.5 text-rose-400 bg-rose-400/10 hover:bg-rose-500 hover:text-white rounded-lg transition-all" 
+                          title="Annuler ce match"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
