@@ -7,7 +7,6 @@ export interface MetaFetchResult {
   matrix: Record<string, Record<string, number>>;
 }
 
-// On garde une base locale (fallback) uniquement si l'utilisateur n'a pas de clé API ou s'il y a une erreur réseau
 export const BASELINE_V11_WINRATES: Record<string, number> = {
   "Chaos Daemons": 64.8, "Aeldari": 54.2, "Thousand Sons": 54.1, "Black Templars": 53.5,
   "Necrons": 52.8, "Adeptus Custodes": 52.0, "World Eaters": 51.5, "Drukhari": 51.2,
@@ -49,39 +48,46 @@ export function generateWTCMatrix(winrates: Record<string, number>): Record<stri
   return matrix;
 }
 
-// LA NOUVELLE FONCTION GEMINI
+// APPEL DE L'API GEMINI 3.5 FLASH
 export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResult> {
   if (!apiKey) throw new Error("Clé API Gemini manquante.");
 
-  const prompt = `Tu es un expert en statistiques de tournois Warhammer 40,000 (WTC).
-  Fournis les taux de victoires (winrates) estimés les plus récents pour la V11.
+  const prompt = `Tu es un expert en statistiques de tournois Warhammer 40,000 (WTC). 
+  Analyse l'état actuel de la méta V11 et fournis les taux de victoires (winrates) estimés les plus récents.
   Tu DOIS retourner les données UNIQUEMENT sous la forme d'un objet JSON strict.
-  Les clés doivent être EXACTEMENT les noms de factions suivants en anglais, et les valeurs doivent être des nombres (pourcentages de 0 à 100) :
+  Les clés doivent être EXACTEMENT les noms de factions suivants en anglais, et les valeurs doivent être des nombres décimaux (pourcentages de 0 à 100) :
   ${JSON.stringify(FACTION_LIST)}
-  Format attendu : {"winrates": {"Faction Name": 50.5, ...}}`;
+  Format de sortie strict attendu : {"winrates": {"Faction Name": 50.5, ...}}`;
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+  // Utilisation de l'endpoint officiel pour gemini-3.5-flash
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      // On force Gemini à ne répondre QUE du JSON pur (sans markdown autour)
-      generationConfig: { response_mime_type: "application/json" } 
+      // Forçage de la réponse structurée en JSON pur
+      generationConfig: { 
+        response_mime_type: "application/json" 
+      } 
     })
   });
 
   if (!response.ok) {
-    throw new Error("Erreur de connexion à l'API Gemini");
+    const errText = await response.text();
+    throw new Error(`Erreur API Gemini 3.5 Flash (${response.status}): ${errText}`);
   }
 
   const data = await response.json();
-  const rawText = data.candidates[0].content.parts[0].text;
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
   
-  // Analyse de la réponse JSON de l'IA
+  if (!rawText) {
+    throw new Error("Réponse vide reçue de Gemini 3.5 Flash.");
+  }
+
   const aiResult = JSON.parse(rawText);
   const aiWinrates = aiResult.winrates;
 
-  // Validation : on s'assure que toutes nos factions ont une valeur (fallback à 50% si l'IA en a oublié une)
+  // Sécurité : comble les éventuelles factions manquantes avec le winrate par défaut (50%)
   const safeWinrates: Record<string, number> = {};
   FACTION_LIST.forEach(faction => {
     safeWinrates[faction] = aiWinrates[faction] !== undefined ? Number(aiWinrates[faction]) : 50.0;
@@ -92,7 +98,7 @@ export async function fetchMetaFromGemini(apiKey: string): Promise<MetaFetchResu
 
   return {
     lastUpdated: dateStr,
-    source: "Généré dynamiquement par Google Gemini AI",
+    source: "Google Gemini 3.5 Flash AI (En direct)",
     winrates: safeWinrates,
     matrix: generateWTCMatrix(safeWinrates)
   };
