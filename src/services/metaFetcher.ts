@@ -1,11 +1,3 @@
-// src/services/metaFetcher.ts
-
-export interface FactionStats {
-  name: string;
-  winrate: number; // en % (ex: 56.8)
-  gamesPlayed: number;
-}
-
 export interface MetaFetchResult {
   lastUpdated: string;
   source: string;
@@ -13,7 +5,6 @@ export interface MetaFetchResult {
   matrix: Record<string, Record<string, number>>;
 }
 
-// Winrates de base issus des données compilées Listhammer / Stat Check / BCP (10e Édition GT Meta)
 export const BASELINE_GT_WINRATES: Record<string, number> = {
   "Orks": 56.8,
   "Aeldari": 56.2,
@@ -43,13 +34,10 @@ export const BASELINE_GT_WINRATES: Record<string, number> = {
   "Adeptus Mechanicus": 43.8
 };
 
-// Convertit une différence de Winrate en note WTC (-3 à +3)
 export function convertWinrateDiffToWTC(wrA: number, wrB: number, factionA: string, factionB: string): number {
   if (factionA === factionB) return 0;
-
   let diff = wrA - wrB;
 
-  // Ajustements spécifiques aux archétypes (anti-char vs châssis, horde vs blender)
   if (factionA.includes("Knights") && (factionB === "Thousand Sons" || factionB === "Aeldari")) diff -= 8;
   if (factionB.includes("Knights") && (factionA === "Thousand Sons" || factionA === "Aeldari")) diff += 8;
 
@@ -62,14 +50,13 @@ export function convertWinrateDiffToWTC(wrA: number, wrB: number, factionA: stri
   return -3;
 }
 
-// Génère la matrice de confrontation complète 26x26
 export function generateWTCMatrix(winrates: Record<string, number>): Record<string, Record<string, number>> {
   const factions = Object.keys(winrates);
   const matrix: Record<string, Record<string, number>> = {};
 
-  factions.forEach(f1 => {
+  factions.forEach((f1) => {
     matrix[f1] = {};
-    factions.forEach(f2 => {
+    factions.forEach((f2) => {
       const wr1 = winrates[f1] ?? 50;
       const wr2 = winrates[f2] ?? 50;
       matrix[f1][f2] = convertWinrateDiffToWTC(wr1, wr2, f1, f2);
@@ -79,13 +66,11 @@ export function generateWTCMatrix(winrates: Record<string, number>): Record<stri
   return matrix;
 }
 
-// Fonction d'acquisition des données distantes avec fallback automatique
 export async function fetchLatestTournamentMeta(): Promise<MetaFetchResult> {
   const now = new Date();
   const dateStr = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
   try {
-    // Tentative de récupération via endpoint proxy public ou API StatCheck/Goonhammer
     const response = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.stat-check.com/api/v1/meta-stats'), {
       signal: AbortSignal.timeout(3000)
     });
@@ -101,14 +86,13 @@ export async function fetchLatestTournamentMeta(): Promise<MetaFetchResult> {
         };
       }
     }
-  } catch (err) {
-    console.warn("Impossible de contacter le serveur distant en direct. Utilisation des données Listhammer / Stat Check compilées.", err);
+  } catch {
+    // Fallback silencieux sur données de secours
   }
 
-  // Fallback : Données Listhammer & BCP GT Tournois
   return {
     lastUpdated: `Août 2026 (Listhammer & Stat Check GT Data)`,
-    source: "Compilations Tournois GT (Listhammer / BCP / Stat Check)",
+    source: "Stat Check & Listhammer GT Meta",
     winrates: BASELINE_GT_WINRATES,
     matrix: generateWTCMatrix(BASELINE_GT_WINRATES)
   };
