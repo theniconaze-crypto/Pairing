@@ -15,13 +15,15 @@ export interface TournamentRound {
   id: string;
   roundNumber: number;
   name: string;
+  assignedOpponentTeamId?: string; // ID de l'équipe adverse assignée à cette ronde
   pairings: RoundPairing[];
   isCompleted: boolean;
 }
 
 export interface MetaState {
   myTeam: Team;
-  opponentTeam: Team;
+  opponentTeam: Team; // Équipe adverse actuellement active dans le pairing
+  tournamentOpponents: Team[]; // Liste des 5 équipes adverses du tournoi
   winrates: Record<string, number>;
   matrices: MatchupMatrices;
   isSyncing: boolean;
@@ -29,13 +31,18 @@ export interface MetaState {
   dataSource: string;
   geminiApiKey: string;
   
-  // --- GESTION DES RONDES ---
   rounds: TournamentRound[];
   activeRoundId: string | null;
 
   setGeminiApiKey: (key: string) => void;
   setMyTeam: (team: Team) => void;
   setOpponentTeam: (team: Team) => void;
+  
+  // Gestion des équipes du tournoi
+  addTournamentOpponent: (team: Team) => void;
+  updateTournamentOpponent: (team: Team) => void;
+  deleteTournamentOpponent: (id: string) => void;
+  assignOpponentToRound: (roundId: string, opponentTeamId: string) => void;
 
   addMyPlayer: (player: Player) => void;
   updateMyPlayer: (id: string, updated: Partial<Player>) => void;
@@ -50,7 +57,6 @@ export interface MetaState {
   resetToDefaults: () => void;
   loadInitialData: () => void;
 
-  // Actions Rondes
   startNewRound: () => void;
   saveRoundPairings: (roundId: string, pairings: RoundPairing[]) => void;
   completeRound: (roundId: string) => void;
@@ -61,20 +67,14 @@ const DEFAULT_MY_TEAM: Team = {
   id: 'my-team',
   name: 'Mon Équipe',
   size: 8,
-  players: [
-    { id: 'p1', name: 'Capitaine', faction: 'Space Marines', disposition: 'Take & Hold', tablePreferences: {} },
-    { id: 'p2', name: 'Joueur 2', faction: 'Orks', disposition: 'Purge the Foe', tablePreferences: {} }
-  ]
+  players: []
 };
 
 const DEFAULT_OPP_TEAM: Team = {
   id: 'opp-team',
-  name: 'Équipe Adverse',
+  name: 'Équipe Adverse Actuelle',
   size: 8,
-  players: [
-    { id: 'o1', name: 'Adversaire 1', faction: 'Chaos Daemons', disposition: 'Disruption', tablePreferences: {} },
-    { id: 'o2', name: 'Adversaire 2', faction: 'Thousand Sons', disposition: 'Priority Asset', tablePreferences: {} }
-  ]
+  players: []
 };
 
 const defaultFactionMatrix = generateWTCMatrix(BASELINE_V11_WINRATES) as Record<string, Record<string, ScoreRating>>;
@@ -89,6 +89,7 @@ export const useMetaStore = create<MetaState>()(
     (set, get) => ({
       myTeam: DEFAULT_MY_TEAM,
       opponentTeam: DEFAULT_OPP_TEAM,
+      tournamentOpponents: [],
       winrates: BASELINE_V11_WINRATES,
       matrices: initialMatrices,
       isSyncing: false,
@@ -102,6 +103,27 @@ export const useMetaStore = create<MetaState>()(
       setGeminiApiKey: (key) => set({ geminiApiKey: key }),
       setMyTeam: (team) => set({ myTeam: team }),
       setOpponentTeam: (team) => set({ opponentTeam: team }),
+
+      addTournamentOpponent: (team) => set((state) => ({
+        tournamentOpponents: [...state.tournamentOpponents, team]
+      })),
+
+      updateTournamentOpponent: (updatedTeam) => set((state) => ({
+        tournamentOpponents: state.tournamentOpponents.map(t => t.id === updatedTeam.id ? updatedTeam : t)
+      })),
+
+      deleteTournamentOpponent: (id) => set((state) => ({
+        tournamentOpponents: state.tournamentOpponents.filter(t => t.id !== id)
+      })),
+
+      assignOpponentToRound: (roundId, opponentTeamId) => {
+        const state = get();
+        const targetOpp = state.tournamentOpponents.find(t => t.id === opponentTeamId);
+        set({
+          rounds: state.rounds.map(r => r.id === roundId ? { ...r, assignedOpponentTeamId: opponentTeamId } : r),
+          opponentTeam: targetOpp ? { ...targetOpp } : state.opponentTeam
+        });
+      },
 
       addMyPlayer: (player) =>
         set((state) => ({
@@ -133,7 +155,7 @@ export const useMetaStore = create<MetaState>()(
         set((state) => ({
           opponentTeam: {
             ...state.opponentTeam,
-            players: (state.opponentTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
+            players: (state.opponentTeam?.players || []).filter((p) => p.id !== id)
           }
         })),
 
@@ -198,7 +220,6 @@ export const useMetaStore = create<MetaState>()(
 
       loadInitialData: () => {},
 
-      // --- LOGIQUE DES RONDES ---
       startNewRound: () => {
         const rounds = get().rounds;
         const nextNum = rounds.length + 1;
