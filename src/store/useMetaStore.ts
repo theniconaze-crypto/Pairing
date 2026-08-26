@@ -1,83 +1,112 @@
 import { create } from 'zustand';
-import { db } from '../db/dexieDb';
-import { Team, MatchupMatrices, RoundSession } from '../types';
+import { Team, Player, MatchupMatrices, DispositionArchetype, ScoreRating } from '../types';
 
 interface MetaState {
-  myTeam: Team | null;
-  opponentTeam: Team | null;
+  myTeam: Team;
+  opponentTeam: Team;
   matrices: MatchupMatrices;
-  activeRound: RoundSession | null;
   isSyncing: boolean;
-  setMyTeam: (team: Team) => Promise<void>;
-  setOpponentTeam: (team: Team) => Promise<void>;
-  updateMatrices: (newMatrices: MatchupMatrices) => Promise<void>;
+
+  // Actions Équipes
+  setMyTeam: (team: Team) => void;
+  setOpponentTeam: (team: Team) => void;
+  
+  // Actions Joueurs Mon Équipe
+  addMyPlayer: (player: Player) => void;
+  updateMyPlayer: (id: string, updated: Partial<Player>) => void;
+  deleteMyPlayer: (id: string) => void;
+
+  // Actions Joueurs Équipe Adverse
+  addOpponentPlayer: (player: Player) => void;
+  updateOpponentPlayer: (id: string, updated: Partial<Player>) => void;
+  deleteOpponentPlayer: (id: string) => void;
+
+  // Meta & Sync
+  updateMatrices: (matrices: MatchupMatrices) => void;
   refreshMetaFromAI: () => Promise<void>;
-  loadInitialData: () => Promise<void>;
+  loadInitialData: () => void;
 }
 
-const defaultMatrices: MatchupMatrices = {
-  factionVsFaction: {
-    'Space Marines': { 'Necrons': 0.5, 'Aeldari': -1, 'Tyranids': 1 },
-    'Necrons': { 'Space Marines': -0.5, 'Aeldari': 0, 'Tyranids': 1.5 },
-    'Aeldari': { 'Space Marines': 1, 'Necrons': 0, 'Tyranids': 2 },
-    'Tyranids': { 'Space Marines': -1, 'Necrons': -1.5, 'Aeldari': -2 }
-  },
+const FACTIONS_DEFAULT = [
+  'Space Marines', 'Necrons', 'Aeldari', 'Tyranids', 'Tau Empire', 
+  'Chaos Space Marines', 'Orks', 'Adeptus Custodes', 'Imperial Knights', 
+  'Chaos Knights', 'Thousand Sons', 'World Eaters', 'Death Guard', 
+  'Astra Militarum', 'Adepta Sororitas', 'Grey Knights', 'Drukhari', 
+  'Genestealer Cults', 'Adeptus Mechanicus'
+];
+
+const DEFAULT_MATRICES: MatchupMatrices = {
+  factionVsFaction: FACTIONS_DEFAULT.reduce((acc, f1) => {
+    acc[f1] = FACTIONS_DEFAULT.reduce((inner, f2) => {
+      inner[f2] = 0;
+      return inner;
+    }, {} as Record<string, ScoreRating>);
+    return acc;
+  }, {} as Record<string, Record<string, ScoreRating>>),
   dispositionVsDisposition: {
-    'Purge the Foe': { 'Purge the Foe': 0, 'Reconnaissance': 1, 'Take & Hold': -0.5, 'Disruption': 0, 'Priority Asset': 0 },
-    'Reconnaissance': { 'Purge the Foe': -1, 'Reconnaissance': 0, 'Take & Hold': 1, 'Disruption': 0.5, 'Priority Asset': 0 },
-    'Take & Hold': { 'Purge the Foe': 0.5, 'Reconnaissance': -1, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0.5 },
-    'Disruption': { 'Purge the Foe': 0, 'Reconnaissance': -0.5, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 1 },
-    'Priority Asset': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': -0.5, 'Disruption': -1, 'Priority Asset': 0 }
-  }
+    'Purge the Foe': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Reconnaissance': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Take & Hold': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Disruption': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 },
+    'Priority Asset': { 'Purge the Foe': 0, 'Reconnaissance': 0, 'Take & Hold': 0, 'Disruption': 0, 'Priority Asset': 0 }
+  },
+  isManuallyOverridden: false
 };
 
-export const useMetaStore = create<MetaState>((set, get) => ({
-  myTeam: null,
-  opponentTeam: null,
-  matrices: defaultMatrices,
-  activeRound: null,
+export const useMetaStore = create<MetaState>((set) => ({
+  myTeam: { id: 'my-team', name: 'Mon Équipe', size: 8, players: [] },
+  opponentTeam: { id: 'opp-team', name: 'Équipe Adverse', size: 8, players: [] },
+  matrices: DEFAULT_MATRICES,
   isSyncing: false,
 
-  loadInitialData: async () => {
-    const savedMatrices = await db.matrices.get('default');
-    if (savedMatrices) {
-      set({ matrices: savedMatrices.data });
-    } else {
-      await db.matrices.put({ id: 'default', data: defaultMatrices });
-    }
-  },
+  setMyTeam: (team) => set({ myTeam: team }),
+  setOpponentTeam: (team) => set({ opponentTeam: team }),
 
-  setMyTeam: async (team) => {
-    await db.teams.put(team);
-    set({ myTeam: team });
-  },
+  addMyPlayer: (player) =>
+    set((state) => ({
+      myTeam: { ...state.myTeam, players: [...state.myTeam.players, player] }
+    })),
 
-  setOpponentTeam: async (team) => {
-    await db.teams.put(team);
-    set({ opponentTeam: team });
-  },
+  updateMyPlayer: (id, updated) =>
+    set((state) => ({
+      myTeam: {
+        ...state.myTeam,
+        players: state.myTeam.players.map((p) => (p.id === id ? { ...p, ...updated } : p))
+      }
+    })),
 
-  updateMatrices: async (newMatrices) => {
-    await db.matrices.put({ id: 'default', data: newMatrices });
-    set({ matrices: newMatrices });
-  },
+  deleteMyPlayer: (id) =>
+    set((state) => ({
+      myTeam: { ...state.myTeam, players: state.myTeam.players.filter((p) => p.id !== id) }
+    })),
+
+  addOpponentPlayer: (player) =>
+    set((state) => ({
+      opponentTeam: { ...state.opponentTeam, players: [...state.opponentTeam.players, player] }
+    })),
+
+  updateOpponentPlayer: (id, updated) =>
+    set((state) => ({
+      opponentTeam: {
+        ...state.opponentTeam,
+        players: state.opponentTeam.players.map((p) => (p.id === id ? { ...p, ...updated } : p))
+      }
+    })),
+
+  deleteOpponentPlayer: (id) =>
+    set((state) => ({
+      opponentTeam: { ...state.opponentTeam, players: state.opponentTeam.players.filter((p) => p.id !== id) }
+    })),
+
+  updateMatrices: (matrices) => set({ matrices }),
 
   refreshMetaFromAI: async () => {
     set({ isSyncing: true });
-    try {
-      // Mock d'appel API Gemini / Engine Meta v11
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const current = get().matrices;
-      const updated = JSON.parse(JSON.stringify(current));
-      
-      // Ajustement simulé de la meta
-      if (updated.factionVsFaction['Aeldari']) {
-        updated.factionVsFaction['Aeldari']['Space Marines'] = 0.5;
-      }
-      
-      await get().updateMatrices(updated);
-    } finally {
-      set({ isSyncing: false });
-    }
-  }
+    // Simulation du rechargement des données IA
+    setTimeout(() => {
+      set({ matrices: { ...DEFAULT_MATRICES, isManuallyOverridden: false }, isSyncing: false });
+    }, 1000);
+  },
+
+  loadInitialData: () => {}
 }));
