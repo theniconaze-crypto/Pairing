@@ -4,6 +4,21 @@ import { persist } from 'zustand/middleware';
 import { Team, Player, MatchupMatrices, ScoreRating } from '../types';
 import { BASELINE_V11_WINRATES, generateWTCMatrix, fetchMetaFromGemini } from '../services/metaFetcher';
 
+export interface RoundPairing {
+  id: string;
+  myPlayer: Player;
+  oppPlayer: Player;
+  score: number;
+}
+
+export interface TournamentRound {
+  id: string;
+  roundNumber: number;
+  name: string;
+  pairings: RoundPairing[];
+  isCompleted: boolean;
+}
+
 export interface MetaState {
   myTeam: Team;
   opponentTeam: Team;
@@ -13,6 +28,10 @@ export interface MetaState {
   lastUpdated: string;
   dataSource: string;
   geminiApiKey: string;
+  
+  // --- GESTION DES RONDES ---
+  rounds: TournamentRound[];
+  activeRoundId: string | null;
 
   setGeminiApiKey: (key: string) => void;
   setMyTeam: (team: Team) => void;
@@ -30,6 +49,12 @@ export interface MetaState {
   updateMatrixCell: (factionA: string, factionB: string, value: number) => void;
   resetToDefaults: () => void;
   loadInitialData: () => void;
+
+  // Actions Rondes
+  startNewRound: () => void;
+  saveRoundPairings: (roundId: string, pairings: RoundPairing[]) => void;
+  completeRound: (roundId: string) => void;
+  deleteRound: (roundId: string) => void;
 }
 
 const DEFAULT_MY_TEAM: Team = {
@@ -70,6 +95,9 @@ export const useMetaStore = create<MetaState>()(
       lastUpdated: 'Août 2026 (V11)',
       dataSource: 'Base locale',
       geminiApiKey: '',
+      
+      rounds: [],
+      activeRoundId: null,
 
       setGeminiApiKey: (key) => set({ geminiApiKey: key }),
       setMyTeam: (team) => set({ myTeam: team }),
@@ -77,10 +105,7 @@ export const useMetaStore = create<MetaState>()(
 
       addMyPlayer: (player) =>
         set((state) => ({
-          myTeam: {
-            ...state.myTeam,
-            players: [...(state.myTeam?.players || []), player]
-          }
+          myTeam: { ...state.myTeam, players: [...(state.myTeam?.players || []), player] }
         })),
 
       updateMyPlayer: (id, updated) =>
@@ -101,19 +126,14 @@ export const useMetaStore = create<MetaState>()(
 
       addOpponentPlayer: (player) =>
         set((state) => ({
-          opponentTeam: {
-            ...state.opponentTeam,
-            players: [...(state.opponentTeam?.players || []), player]
-          }
+          opponentTeam: { ...state.opponentTeam, players: [...(state.opponentTeam?.players || []), player] }
         })),
 
       updateOpponentPlayer: (id, updated) =>
         set((state) => ({
           opponentTeam: {
             ...state.opponentTeam,
-            players: (state.opponentTeam?.players || []).filter(p => p.id !== id).concat(
-              state.opponentTeam.players.filter(p => p.id === id).map(p => ({ ...p, ...updated }))
-            )
+            players: (state.opponentTeam?.players || []).map((p) => (p.id === id ? { ...p, ...updated } : p))
           }
         })),
 
@@ -124,8 +144,6 @@ export const useMetaStore = create<MetaState>()(
             players: (state.opponentTeam?.players || []).filter((p) => p.id !== id)
           }
         })),
-
-      updateMatrices: (matrices) => set({ matrices }),
 
       updateMatrixCell: (fA, fB, value) => {
         const currentMatrices = get().matrices;
@@ -178,8 +196,45 @@ export const useMetaStore = create<MetaState>()(
         });
       },
 
-      loadInitialData: () => {}
+      loadInitialData: () => {},
+
+      // --- LOGIQUE DES RONDES ---
+      startNewRound: () => {
+        const rounds = get().rounds;
+        const nextNum = rounds.length + 1;
+        const newRound: TournamentRound = {
+          id: crypto.randomUUID(),
+          roundNumber: nextNum,
+          name: `Ronde ${nextNum}`,
+          pairings: [],
+          isCompleted: false
+        };
+        set({
+          rounds: [...rounds, newRound],
+          activeRoundId: newRound.id
+        });
+      },
+
+      saveRoundPairings: (roundId, pairings) => {
+        set((state) => ({
+          rounds: state.rounds.map((r) => (r.id === roundId ? { ...r, pairings } : r))
+        }));
+      },
+
+      completeRound: (roundId) => {
+        set((state) => ({
+          rounds: state.rounds.map((r) => (r.id === roundId ? { ...r, isCompleted: true } : r)),
+          activeRoundId: null
+        }));
+      },
+
+      deleteRound: (roundId) => {
+        set((state) => ({
+          rounds: state.rounds.filter((r) => r.id !== roundId),
+          activeRoundId: state.activeRoundId === roundId ? null : state.activeRoundId
+        }));
+      }
     }),
-    { name: 'wtc-meta-storage-v11-fixed' }
+    { name: 'wtc-rounds-storage-v11' }
   )
 );
