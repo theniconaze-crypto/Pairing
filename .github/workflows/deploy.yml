@@ -13,16 +13,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies & Build
+      - name: Get source code
         run: |
+          git clone --branch main https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+
+      - name: Install Node.js & Build directly
+        run: |
+          # Utilise directement la version de Node disponible sur l'environnement Linux sans action intermédiaire
+          node -v
           npm install
           npm run build
         env:
