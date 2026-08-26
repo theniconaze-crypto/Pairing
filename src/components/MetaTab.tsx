@@ -1,90 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMetaStore } from '../store/useMetaStore';
-import { RefreshCw, Database, KeyRound, Check, AlertTriangle } from 'lucide-react';
+import { Save, Info } from 'lucide-react';
 
-export const MetaEditor: React.FC = () => {
-  const { winrates, matrices, isSyncing, lastUpdated, dataSource, geminiApiKey, setGeminiApiKey, refreshMetaFromAI, resetToDefaults, updateMatrixCell } = useMetaStore();
-  const factions = Object.keys(winrates);
+export const MetaTab: React.FC = () => {
+  const store = useMetaStore();
   
-  const [tempKey, setTempKey] = useState(geminiApiKey);
-  const [showKeySaved, setShowKeySaved] = useState(false);
+  // 🛡️ CORRECTION SÉCURITÉ ICI : 
+  // On utilise "?." et "|| {}" pour garantir qu'on a toujours un objet valide, même si le store est vide
+  const safeMatrices = store.matrices?.factionVsFaction || {};
+  
+  const [localData, setLocalData] = useState<Record<string, Record<string, number>>>(safeMatrices);
 
-  const saveApiKey = () => {
-    setGeminiApiKey(tempKey);
-    setShowKeySaved(true);
-    setTimeout(() => setShowKeySaved(false), 2000);
+  // Met à jour l'affichage si le store change
+  useEffect(() => {
+    setLocalData(store.matrices?.factionVsFaction || {});
+  }, [store.matrices]);
+
+  // Liste de factions par défaut si la matrice est complètement vide
+  const defaultFactions = [
+    "Space Marines", "Aeldari", "Orks", "Tyranids", 
+    "Necrons", "World Eaters", "Tau Empire", "Astra Militarum"
+  ];
+
+  // 🛡️ SÉCURITÉ : On lit les clés existantes. Si l'objet est vide, on utilise la liste par défaut.
+  const existingFactions = Object.keys(safeMatrices);
+  const factionsToDisplay = existingFactions.length > 0 ? existingFactions : defaultFactions;
+
+  const handleScoreChange = (factionA: string, factionB: string, value: string) => {
+    const score = parseInt(value, 10);
+    if (isNaN(score)) return;
+
+    setLocalData(prev => ({
+      ...prev,
+      [factionA]: {
+        ...(prev[factionA] || {}),
+        [factionB]: score
+      }
+    }));
   };
 
-  const getScoreBadgeClass = (val: number) => {
-    if (val >= 2) return "bg-emerald-600 text-white font-bold";
-    if (val === 1) return "bg-emerald-100 text-emerald-800 font-medium";
-    if (val === 0) return "bg-slate-100 text-slate-700";
-    if (val === -1) return "bg-rose-100 text-rose-800 font-medium";
-    return "bg-rose-600 text-white font-bold";
+  const handleSave = () => {
+    store.saveMatrix({ factionVsFaction: localData });
+    alert("Matrice Meta sauvegardée avec succès !");
   };
 
   return (
-    <div className="p-6 space-y-6">
-      
-      {/* Panneau de configuration de l'API */}
-      <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-md">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-          <KeyRound className="w-5 h-5 text-amber-400" />
-          Moteur d'Intelligence Artificielle (Google Gemini)
-        </h3>
-        <p className="text-sm text-slate-400 mb-4">
-          Connectez votre clé API Google Gemini pour analyser le web en temps réel et générer une matrice WTC basée sur les toutes dernières discussions, listes de tournois et retours de la communauté V11.
-        </p>
-        
-        <div className="flex items-center gap-3">
-          <input 
-            type="password"
-            placeholder="Entrez votre clé API Gemini (AIzaSy...)"
-            value={tempKey}
-            onChange={(e) => setTempKey(e.target.value)}
-            className="flex-1 bg-slate-800 border border-slate-600 text-white rounded-lg p-2.5 outline-none focus:border-amber-500"
-          />
-          <button 
-            onClick={saveApiKey}
-            className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg flex items-center gap-2 transition"
-          >
-            {showKeySaved ? <Check className="w-4 h-4 text-emerald-400" /> : 'Sauvegarder'}
-          </button>
-        </div>
-      </div>
-
-      {/* Header Info & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800 text-white p-5 rounded-xl shadow-md gap-4">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="bg-slate-900 border border-slate-700 p-5 rounded-xl shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Database className="w-5 h-5 text-sky-400" />
-            Matrice de Winrates 
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Info className="w-6 h-6 text-sky-400" />
+            Matrice Meta (Score WTC)
           </h2>
-          <p className="text-sm text-slate-300 mt-1">
-            Source : <span className="font-semibold text-sky-300">{dataSource}</span> • MAJ : {lastUpdated}
+          <p className="text-sm text-slate-400 mt-1">
+            Remplissez les scores (0 à 20) d'une faction contre une autre. Ces données serviront à générer l'équipe optimisée.
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={() => resetToDefaults()} className="px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg transition">
-            Reset (Hors-ligne)
-          </button>
-          <button
-            onClick={() => refreshMetaFromAI()}
-            disabled={isSyncing || !geminiApiKey}
-            className="flex items-center gap-2 px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-white rounded-lg font-bold shadow-lg disabled:opacity-50 transition-all"
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Analyse Gemini en cours...' : 'Générer la Méta via IA'}
-          </button>
-        </div>
+        <button 
+          onClick={handleSave}
+          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow transition"
+        >
+          <Save className="w-4 h-4" /> Sauvegarder la Matrice
+        </button>
       </div>
 
-      {/* Reste du code de votre matrice et des winrates... */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
-        {/* ... L'affichage du tableau WTC reste identique à votre version ... */}
+      <div className="bg-slate-900 border border-slate-700 p-2 rounded-xl shadow-lg overflow-x-auto">
+        <table className="w-full text-sm text-left border-collapse">
+          <thead className="text-xs text-slate-300 uppercase bg-slate-950">
+            <tr>
+              <th className="p-4 font-bold border-b border-r border-slate-800 text-sky-400">Attaquant \ Défenseur</th>
+              {factionsToDisplay.map(f => (
+                <th key={f} className="p-3 text-center font-bold border-b border-slate-800" style={{ minWidth: '90px' }}>
+                  <span className="block truncate text-[10px]" title={f}>{f.substring(0, 12)}.</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {factionsToDisplay.map((factionRow) => (
+              <tr key={factionRow} className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+                <td className="p-3 font-bold text-slate-200 border-r border-slate-800 whitespace-nowrap bg-slate-950/50">
+                  {factionRow}
+                </td>
+                {factionsToDisplay.map((factionCol) => {
+                  const score = localData[factionRow]?.[factionCol];
+                  return (
+                    <td key={`${factionRow}-${factionCol}`} className="p-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="20"
+                        value={score !== undefined ? score : ''}
+                        onChange={(e) => handleScoreChange(factionRow, factionCol, e.target.value)}
+                        placeholder="-"
+                        className="w-full h-10 bg-slate-950 border border-slate-800 rounded p-1 text-center text-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none transition"
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
     </div>
   );
 };
