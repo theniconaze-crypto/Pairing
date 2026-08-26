@@ -8,13 +8,19 @@ import { MetaEditor } from './components/MetaEditor';
 import { TournamentRounds } from './components/TournamentRounds';
 
 export const App: React.FC = () => {
-  const { myTeam, opponentTeam, matrices, loadInitialData } = useMetaStore();
+  const store = useMetaStore();
   const [activeTab, setActiveTab] = useState<'pairing' | 'matrix' | 'rounds' | 'meta' | 'rosters'>('rosters');
   const [availableMaps] = useState<string[]>(['Map 1', 'Map 2', 'Map 3', 'Map 4', 'Map 5', 'Map 6', 'Map 7', 'Map 8']);
 
   useEffect(() => {
-    loadInitialData();
+    if (store.loadInitialData) {
+      store.loadInitialData();
+    }
   }, []);
+
+  const myPlayers = store.myTeam?.players || [];
+  const oppPlayers = store.opponentTeam?.players || [];
+  const matrices = store.matrices || { factionVsFaction: {}, dispositionVsDisposition: {} as any };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans">
@@ -28,10 +34,12 @@ export const App: React.FC = () => {
       </header>
 
       <main className="flex-1 overflow-y-auto">
+        {activeTab === 'rosters' && <RosterManager />}
+
         {activeTab === 'pairing' && (
           <PairingAssistant
-            myPlayers={myTeam.players}
-            oppPlayers={opponentTeam.players}
+            myPlayers={myPlayers}
+            oppPlayers={oppPlayers}
             availableMaps={availableMaps}
             matrices={matrices}
           />
@@ -39,13 +47,12 @@ export const App: React.FC = () => {
 
         {activeTab === 'matrix' && (
           <div className="h-[calc(100vh-130px)] p-2">
-            <ZoomableMatrix myPlayers={myTeam.players} oppPlayers={opponentTeam.players} matrices={matrices} />
+            <ZoomableMatrix myPlayers={myPlayers} oppPlayers={oppPlayers} matrices={matrices} />
           </div>
         )}
 
         {activeTab === 'rounds' && <TournamentRounds />}
         {activeTab === 'meta' && <MetaEditor />}
-        {activeTab === 'rosters' && <RosterManager />}
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 px-2 py-2 flex items-center justify-around pb-6">
